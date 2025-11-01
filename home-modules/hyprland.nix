@@ -2,9 +2,9 @@
 
 {
   home.sessionVariables = {
-    XCURSOR_THEME = "Bibata_Modern_Classic";
+    XCURSOR_THEME = "Bibata-Modern-Classic";
     XCURSOR_SIZE = "24";
-    HYPRCURSOR_THEME = "Bibata_Modern_Classic";
+    HYPRCURSOR_THEME = "Bibata-Modern-Classic";
     HYPRCURSOR_SIZE = "24";
 
     # Wayland & Qt
@@ -30,7 +30,7 @@
     input = {
       kb_layout = "hu";
       follow_mouse = 1;
-      sensitivity = -0.5;
+      sensitivity = -0.167;
       accel_profile = "flat";
     };
 
@@ -61,7 +61,7 @@
       "hyprpaper"
     ];
 
-    "$mainMod" = "SUPER";
+    "$mainMod" = "MOD1";
     "$terminal" = "kitty";
     "$applaunch" = "rofi -show drun";
     "$browser" = "librewolf";
@@ -97,10 +97,10 @@
       "$mainMod SHIFT, F, fullscreen"
       "$mainMod, P, pseudo"
 
-      "$mainMod, left, movefocus, l"
-      "$mainMod, right, movefocus, r"
-      "$mainMod, up, movefocus, u"
-      "$mainMod, down, movefocus, d"
+      "CTRL SHIFT, left, movefocus, l"
+      "CTRL SHIFT, right, movefocus, r"
+      "CTRL SHIFT, up, movefocus, u"
+      "CTRL SHIFT, down, movefocus, d"
 
       "$mainMod, 1, workspace, 1"
       "$mainMod, 2, workspace, 2"

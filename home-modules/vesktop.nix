@@ -52,6 +52,7 @@
       FixYoutubeEmbeds.enabled = true;
       FriendsSince.enabled = true;
       Translate.enabled = true;
+      YoutubeAdBlock.enabled = true;
     };
   };
 }

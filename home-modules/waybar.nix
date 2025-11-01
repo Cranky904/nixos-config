@@ -7,7 +7,7 @@
     mainBar = {
       layer = "top";
       position = "bottom";
-      height = 20;
+      height = 38;
       spacing = 0;
 
       modules-left = [ "hyprland/workspaces" ];
@@ -17,9 +17,15 @@
       "hyprland/workspaces" = {
         format = "{icon}";
         format-icons = {
-          "1" = "󰈹"; "2" = ""; "3" = ""; "4" = ""; "5" = "";
-          "urgent" = "";
-          "default" = "";
+          "1" = "󰈹";
+          "2" = "";
+          "3" = "";
+          "4" = "";
+          "5" = "󱤙";
+          "6" = "";
+          "7" = "";
+          "urgent" = "󱢇";
+          "default" = "󱣀";
         };
         on-scroll-up = "hyprlandmsg dispatch workspace e+1";
         on-scroll-down = "hyprlandmsg dispatch workspace e-1";
@@ -104,6 +110,7 @@
     @define-color aqua #689d6a;
     @define-color gray #a89984;
     @define-color orange #d65d0e;
+    @define-color white #dadada;
 
     * {
       border: none;
@@ -157,19 +164,19 @@
       background-color: @bg-alt;
     }
     #workspaces button.active {
-      color: @aqua;
+      color: @blue;
       font-weight: bold;
     }
     #workspaces button.urgent {
       color: @red;
     }
 
-    #clock { color: @purple; font-weight: bold; }
+    #clock { color: @white; font-weight: bold; }
     #custom-brightness { color: @yellow; }
-    #pulseaudio { color: @blue; }
-    #network { color: @aqua; }
-    #cpu { color: @orange; }
-    #memory { color: @green; }
+    #pulseaudio { color: @aqua; }
+    #network { color: @blue; }
+    #cpu { color: @yellow; }
+    #memory { color: @aqua; }
 
     tooltip {
       background-color: @bg;

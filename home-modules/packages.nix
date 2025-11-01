@@ -21,6 +21,8 @@
 
     obsidian
 
+    anydesk
+
     rustc
     cargo
 
@@ -39,20 +41,29 @@
     rust-analyzer
     zig
 
+    xfce.thunar
+
+    keepassxc
+
+
+    prismlauncher
+
     # Terminal
     kitty
     fzf
     starship
     grc
 
+    # Torrent
+    qbittorrent
+
     # Hyprland ecosystem
     wl-clipboard
     waybar
     rofi
-    mako
+    swaync
     swaylock-effects
     swaybg
-    dunst
     grimblast
     nil
     hyprpaper
@@ -88,6 +99,7 @@
     element-desktop
 
     gamemode
+    gamescope
 
     librewolf
 

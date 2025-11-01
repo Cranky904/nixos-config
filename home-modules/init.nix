@@ -18,6 +18,7 @@
     ./qt.nix
     ./fish.nix
     ./git.nix
+    ./swaync.nix
   ];
 
   home.stateVersion = "25.05";

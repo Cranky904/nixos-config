@@ -12,7 +12,7 @@
       package = pkgs.vimix-icon-theme;
     };
     cursorTheme = {
-      name = "Bibata_Modern_Classic";
+      name = "Bibata-Modern-Classic";
       package = pkgs.bibata-cursors;
     };
   };
