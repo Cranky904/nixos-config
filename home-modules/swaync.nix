@@ -2,7 +2,7 @@
   # ... other config ...
   
   # Enable swaync
-  home.packages = with pkgs; [ swaync ];
+  services.swaync.enable = true;
   
   # Swaync configuration
   xdg.configFile."swaync/config.json".text = builtins.toJSON {

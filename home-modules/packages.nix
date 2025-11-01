@@ -61,7 +61,7 @@
     wl-clipboard
     waybar
     rofi
-    swaync
+    swaynotificationcenter
     swaylock-effects
     swaybg
     grimblast
