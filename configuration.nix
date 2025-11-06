@@ -14,6 +14,15 @@
   networking = {
     hostName = "nixos";
     networkmanager.enable = true;
+  
+    extraHosts = ''
+      0.0.0.0 hkrpg-log-upload-os.hoyoverse.com
+      0.0.0.0 log-upload-os.hoyoverse.com
+      0.0.0.0 sg-public-data-api.hoyoverse.com
+        0.0.0.0 overseauspider.yuanshen.com
+      0.0.0.0 apm-log-upload-os.hoyoverse.com
+      0.0.0.0 zzz-log-upload-os.hoyoverse.com
+    '';
   };
 
   time.timeZone = "Europe/Budapest";

@@ -1,5 +1,12 @@
 { config, pkgs, ... }:
 
+let
+  aagl-gtk-on-nix = import (builtins.fetchTarball {
+    url = "https://github.com/ezKEa/aagl-gtk-on-nix/archive/main.tar.gz";
+    sha256 = "099yfg3j77w76cl1j4h3fplmajk525nzcwfclwf8a8fnkvicl19q";
+  });
+in
+
 {
   nixpkgs.config.allowUnfree = true;
 
@@ -45,8 +52,11 @@
 
     keepassxc
 
-
+    # Games
     prismlauncher
+
+    aagl-gtk-on-nix.honkers-railway-launcher
+
 
     # Terminal
     kitty
