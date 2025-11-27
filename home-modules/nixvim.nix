@@ -25,7 +25,7 @@
     colorschemes.gruvbox.settings.transparent_background = true;
 
     plugins = {
-      lualine.enable = true;
+      #lualine.enable = true;
       telescope.enable = true;
       treesitter.enable = true;
       which-key.enable = true;

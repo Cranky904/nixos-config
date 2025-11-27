@@ -54,9 +54,7 @@ in
 
     # Games
     prismlauncher
-
     aagl-gtk-on-nix.honkers-railway-launcher
-
 
     # Terminal
     kitty
@@ -106,12 +104,10 @@ in
     gnupg
     pinentry-all
 
-    element-desktop
+#    element-desktop
 
     gamemode
     gamescope
-
-    librewolf
 
     # Jellyfin
     jellyfin
@@ -120,6 +116,7 @@ in
     jellyfin-rpc
 
     aerc
+    unzip
 
     heroic
   ];

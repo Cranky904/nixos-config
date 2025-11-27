@@ -19,6 +19,7 @@
     ./fish.nix
     ./git.nix
     ./swaync.nix
+    ./chromium.nix
   ];
 
   home.stateVersion = "25.05";
