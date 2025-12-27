@@ -3,7 +3,7 @@
 let
   aagl-gtk-on-nix = import (builtins.fetchTarball {
     url = "https://github.com/ezKEa/aagl-gtk-on-nix/archive/main.tar.gz";
-    sha256 = "099yfg3j77w76cl1j4h3fplmajk525nzcwfclwf8a8fnkvicl19q";
+    sha256 = "03d70kl0p98n34hbkrbvg3j1dp381d6g50cgy0rv5b7wbxvv0hla";
   });
 in
 
@@ -52,6 +52,8 @@ in
 
     keepassxc
 
+    pixelorama
+
     # Games
     prismlauncher
     aagl-gtk-on-nix.honkers-railway-launcher
@@ -61,6 +63,8 @@ in
     fzf
     starship
     grc
+
+    mumble
 
     # Torrent
     qbittorrent

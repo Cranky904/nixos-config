@@ -81,6 +81,7 @@
     pulse.enable = true;
   };
 
+
   users.groups.i2c = {};
 
   programs.fish.enable = true;
@@ -100,8 +101,12 @@
 
   nixpkgs.config.allowUnfree = true;
 
-  networking.firewall.allowedTCPPorts = [ 8096 ];
-  networking.firewall.allowedUDPPorts = [ 8096 ];
+  networking.firewall.allowedTCPPorts = [ 8096 59100 ];
+  networking.firewall.allowedUDPPorts = [ 8096 59100 59200 ];
+
+  services.tailscale.enable = true;
+
+  programs.adb.enable = true;
 
   environment.systemPackages = with pkgs; [
     docker# Did you read the comment?
@@ -137,6 +142,15 @@
     open = false;
     nvidiaSettings = true;
     package = config.boot.kernelPackages.nvidiaPackages.stable;
+
+    prime = {
+      offload.enable = true;
+      offload.enableOffloadCmd = true;
+
+      nvidiaBusId = "PCI:1:0:0"; # GTX 1060 6GB
+
+      intelBusId = "PCI:4:0:0"; # GTX 1050 TI
+    };
   };
 
   services.jellyfin = {
@@ -149,6 +163,11 @@
     device = "/dev/disk/by-uuid/4c0497c0-422a-4391-8791-08e6ada56f82";
     fsType = "ext4";
   };
+
+  swapDevices = [ {
+    device = "/var/lib/swapfile";
+    size = 16*1024;
+  } ];
 
   services.flatpak.enable = true;
 

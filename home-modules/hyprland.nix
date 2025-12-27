@@ -21,12 +21,15 @@
     WLR_NO_HARDWARE_CURSORS = "1";
     WLR_RENDERER_ALLOW_SOFTWARE = "1"; # fallback for some setups
     WLR_DRM_NO_ATOMIC = "1"; # sometimes needed for older drivers
+    WLR_DRM_DEVICES = "/dev/dri/by-path/pci-0000:04:00.0-card";
+
   };
 
   wayland.windowManager.hyprland.enable = true;
   wayland.windowManager.hyprland.package = pkgs.hyprland; # make sure it’s from nixpkgs-unstable
 
   wayland.windowManager.hyprland.settings = {
+
     input = {
       kb_layout = "hu";
       follow_mouse = 1;
@@ -37,6 +40,10 @@
     device = {
       name = "epic-mouse-v1";
       sensitivity = -0.5;
+      };
+
+    cursor = {
+      no_hardware_cursors = true;
     };
 
     decoration = {
@@ -65,7 +72,7 @@
     "$mainMod" = "MOD1";
     "$terminal" = "kitty";
     "$applaunch" = "rofi -show drun";
-    "$browser" = "librewolf";
+    "$browser" = "chromium";
     "$fileManager" = "thunar";
 
     animations = {
