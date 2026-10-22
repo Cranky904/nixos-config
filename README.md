@@ -1,23 +1,34 @@
 # Cranky's NixOS configuration
 
-The system and home environment use the same `flake.lock`, with separate
-activation workflows:
+The system and home environment use the same `flake.lock`, with two entry points:
 
-- `./rebuild.sh`: stage the repository, rebuild and activate the NixOS system,
-  then commit the staged changes and push the current branch to `origin` only
-  after a successful rebuild. It does not activate Home Manager.
-- `./home.sh`: build and activate the standalone Home Manager configuration,
-  backing up conflicting unmanaged files with the `.backup` extension.
+- `./rebuild.sh`: update all flake inputs, stage the repository (including the
+  updated lockfile), rebuild and activate both NixOS and Home Manager, then
+  commit the staged changes and push the current branch to `origin` only after
+  a successful rebuild.
+- `./home.sh`: build and activate just Home Manager for frequent configuration
+  testing, without rebuilding the system or updating inputs.
 
-Neither script updates the flake inputs. Update them deliberately with
-`nix flake update` and review the lockfile diff before activating.
+Both entry points share the same home modules and back up conflicting unmanaged
+files with the `.backup` extension. The pinned Home Manager CLI is available from
+the system profile so `home.sh` remains usable after a full rebuild.
+
+`rebuild.sh` runs `nix flake update` before rebuilding, so it can pick up newer
+packages. `home.sh` uses the versions already pinned in the shared lockfile,
+keeping frequent home configuration tests fast. A full `./rebuild.sh` applies
+updated user packages and desktop configuration too; a separate `./home.sh` run
+is not required. Most applications, including `gh`, are Home Manager packages.
+
+To update the home environment without rebuilding the system, run
+`nix flake update` followed by `./home.sh`.
 
 Rebuild commits are named `Rebuild iteration #1`, `Rebuild iteration #2`, etc.
 The next number is one above the highest matching commit subject in local Git
 history, including other branches and remote-tracking refs. A rebuild without
 staged changes skips the commit but still attempts the push, allowing a failed
-push to be retried. Rebuild failures leave files staged without committing or
-pushing them; push failures keep the local commit for retrying.
+push to be retried. An input-update failure stops before rebuilding. Rebuild
+failures leave files staged without committing or pushing them; push failures
+keep the local commit for retrying.
 
 The push uses Git with the existing SSH remote. The `gh` CLI is installed by
 Home Manager for other GitHub operations.
@@ -54,6 +65,7 @@ flake. Home Manager includes that Cargo bin directory in the session PATH.
 - [Hyprland NVIDIA setup](https://wiki.hypr.land/Nvidia/)
 - [Hyprland multiple GPUs](https://wiki.hypr.land/configuring/extra/multi-gpu/)
 - [Standalone Home Manager with flakes](https://nix-community.github.io/home-manager/nix-flakes/standalone.html)
+- [Home Manager's NixOS integration](https://nix-community.github.io/home-manager/nix-flakes/nixos.html)
 - [Home Manager file backups](https://nix-community.github.io/home-manager/usage/dotfiles.html)
 - [Nixvim extra plugins](https://nix-community.github.io/nixvim/user-guide/faq.html)
 

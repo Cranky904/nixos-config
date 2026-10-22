@@ -5,10 +5,14 @@ cd "$(dirname "$0")"
 
 branch=$(git symbolic-ref --short HEAD)
 
+echo "Updating flake inputs..."
+nix flake update
+
 # Git-backed flakes only include known files, including newly added modules.
+# Stage the refreshed lockfile with the configuration used by the rebuild.
 git add --all
 
-echo "Rebuilding NixOS system..."
+echo "Rebuilding NixOS and Home Manager with updated inputs..."
 sudo nixos-rebuild switch --flake .#nixos
 
 # set -e stops here on a failed rebuild, before any commit or push.
@@ -31,5 +35,5 @@ fi
 echo "Pushing ${branch} to origin..."
 git push --set-upstream origin "HEAD:refs/heads/${branch}"
 
-echo "Done!"
+echo "NixOS and Home Manager updated."
 

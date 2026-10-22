@@ -24,21 +24,33 @@
           allowUnfree = true;
         };
       };
+      homeModules = [
+        nixvim.homeModules.nixvim
+        ./home-modules/init.nix
+      ];
     in
     {
-      # System and home are activated independently by rebuild.sh and home.sh.
+      # Full rebuilds apply the same home configuration used by home.sh.
       nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
         inherit system;
-        modules = [ ./configuration.nix ];
+        modules = [
+          ./configuration.nix
+          home-manager.nixosModules.home-manager
+          {
+            home-manager = {
+              backupFileExtension = "backup";
+              users.cranky.imports = homeModules;
+            };
+            # Keep the standalone testing command available after a full rebuild.
+            environment.systemPackages = [ home-manager.packages.${system}.home-manager ];
+          }
+        ];
       };
 
       homeConfigurations = {
         "cranky" = home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
-          modules = [
-            nixvim.homeModules.nixvim
-            ./home-modules/init.nix
-          ];
+          modules = homeModules;
         };
       };
     };
