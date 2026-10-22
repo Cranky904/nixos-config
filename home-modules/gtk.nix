@@ -4,8 +4,8 @@
   gtk = {
     enable = true;
     theme = {
-      name = "Gruvbox-Dark";
-      package = pkgs.gruvbox-gtk-theme;
+      name = "gruvbox-dark";
+      package = pkgs.gruvbox-dark-gtk;
     };
     iconTheme = {
       name = "Vimix";

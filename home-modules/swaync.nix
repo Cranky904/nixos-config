@@ -92,7 +92,7 @@
       .control-center {
         background: @bg;
         border: 2px solid @bg2;
-        border-radius: 12px;
+        border-radius: 0px;
         padding: 8px;
         box-shadow: 0 0 20px 0 rgba(0, 0, 0, 0.6);
       }
@@ -108,7 +108,7 @@
       .widget-title > button {
         background: @bg2;
         color: @fg;
-        border-radius: 8px;
+        border-radius: 0px;
         padding: 6px 12px;
         font-size: 12px;
       }
@@ -119,14 +119,14 @@
 
       .widget-dnd {
         background: @bg1;
-        border-radius: 8px;
+        border-radius: 0px;
         padding: 8px;
         margin: 4px 0;
       }
 
       .widget-dnd > switch {
         background: @bg3;
-        border-radius: 12px;
+        border-radius: 0px;
         min-width: 40px;
         min-height: 20px;
       }
@@ -137,7 +137,7 @@
 
       .widget-dnd > switch slider {
         background: @fg;
-        border-radius: 50%;
+        border-radius: 0px;
         min-width: 16px;
         min-height: 16px;
         margin: 2px;
@@ -147,7 +147,7 @@
       .notification {
         background: @bg1;
         border: 1px solid @bg2;
-        border-radius: 10px;
+        border-radius: 0px;
         margin: 6px 0;
         padding: 0;
         box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.3);
@@ -156,11 +156,11 @@
       .notification-content {
         background: transparent;
         padding: 12px;
-        border-radius: 10px;
+        border-radius: 0px;
       }
 
       .notification-default-action {
-        border-radius: 10px;
+        border-radius: 0px;
       }
 
       .notification-default-action:hover {
@@ -190,7 +190,7 @@
       }
 
       .notification-body image {
-        border-radius: 6px;
+        border-radius: 0px;
         border: 1px solid @bg3;
       }
 
@@ -204,7 +204,7 @@
       .notification-action {
         background: @bg2;
         color: @fg;
-        border-radius: 6px;
+        border-radius: 0px;
         padding: 6px 12px;
         margin: 2px;
         font-size: 12px;
@@ -223,7 +223,7 @@
       .close-button {
         background: @red;
         color: @bg;
-        border-radius: 50%;
+        border-radius: 0px;
         min-width: 20px;
         min-height: 20px;
         margin: 4px;
@@ -237,12 +237,12 @@
       /* Scrollbar */
       scrollbar {
         background: @bg2;
-        border-radius: 6px;
+        border-radius: 0px;
       }
 
       scrollbar slider {
         background: @bg4;
-        border-radius: 6px;
+        border-radius: 0px;
         min-width: 8px;
       }
 
@@ -253,7 +253,7 @@
       /* Progress bar */
       progressbar {
         background: @bg2;
-        border-radius: 4px;
+        border-radius: 0px;
         min-height: 6px;
       }
 

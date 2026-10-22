@@ -1,1 +1,1 @@
-flake.lock
+# Keep flake.lock in version control so system and home use the same pinned inputs.

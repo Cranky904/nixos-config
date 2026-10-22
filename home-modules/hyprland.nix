@@ -12,23 +12,26 @@
     QT_WAYLAND_DISABLE_WINDOWDECORATION = "1";
     QT_AUTO_SCREEN_SCALE_FACTOR = "1";
 
-    # --- NVIDIA SPECIAL SAUCE ---
+    # NVIDIA VA-API and GLX; do not force PRIME offload for every application.
     LIBVA_DRIVER_NAME = "nvidia";
     GBM_BACKEND = "nvidia-drm";
     __GLX_VENDOR_LIBRARY_NAME = "nvidia";
-    __NV_PRIME_RENDER_OFFLOAD = "1";
-    __VK_LAYER_NV_optimus = "NVIDIA_only";
-    WLR_NO_HARDWARE_CURSORS = "1";
-    WLR_RENDERER_ALLOW_SOFTWARE = "1"; # fallback for some setups
-    WLR_DRM_NO_ATOMIC = "1"; # sometimes needed for older drivers
-    WLR_DRM_DEVICES = "/dev/dri/by-path/pci-0000:04:00.0-card";
-
   };
 
   wayland.windowManager.hyprland.enable = true;
-  wayland.windowManager.hyprland.package = pkgs.hyprland; # make sure it’s from nixpkgs-unstable
+  wayland.windowManager.hyprland.package = pkgs.hyprland;
+  wayland.windowManager.hyprland.configType = "hyprlang";
+  # Home Manager imports the session environment and starts graphical services.
+  wayland.windowManager.hyprland.systemd.enable = true;
 
   wayland.windowManager.hyprland.settings = {
+
+    misc = {
+      disable_hyprland_logo = true;
+      disable_splash_rendering = true;
+      force_default_wallpaper = 0; # Set to 0 to disable the anime mascot
+    };
+
 
     input = {
       kb_layout = "hu";
@@ -47,7 +50,7 @@
     };
 
     decoration = {
-      rounding = 0;
+      rounding = 16;
     };
 
     general = {
@@ -62,35 +65,27 @@
       layout = "dwindle";
     };
 
-    exec-once = [
-      "dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP"
-      "waybar"
-      "hyprpaper"
-      "swaync"
-    ];
-
     "$mainMod" = "MOD1";
     "$terminal" = "kitty";
-    "$applaunch" = "rofi -show drun";
+    "$applaunch" = "vicinae toggle";
     "$browser" = "chromium";
     "$fileManager" = "thunar";
 
     animations = {
-      enabled = false;
+      enabled = true;
       bezier = [
         "majesticBezier, 0.15, 0.9, 0.25, 1.05"
         "softFade, 0.4, 0, 0.2, 1"
       ];
       animation = [
-        "windows, 1, 7, majesticBezier"
-        "border, 1, 5, majesticBezier"
-        "fade, 1, 5, softFade"
-        "workspaces, 1, 6, majesticBezier"
+        "windows, 1, 3, majesticBezier"
+        "border, 1, 3, majesticBezier"
+        "fade, 1, 3, softFade"
+        "workspaces, 1, 3, majesticBezier"
       ];
     };
 
     dwindle = {
-      pseudotile = true;
       preserve_split = true;
     };
 
@@ -105,10 +100,13 @@
       "$mainMod SHIFT, F, fullscreen"
       "$mainMod, P, pseudo"
 
-      "CTRL SHIFT, left, movefocus, l"
-      "CTRL SHIFT, right, movefocus, r"
-      "CTRL SHIFT, up, movefocus, u"
-      "CTRL SHIFT, down, movefocus, d"
+      "SUPER, SUPER_L, exec, qs ipc call launcher toggle"
+      "$mainMod, W, exec, qs ipc call launcher toggleBar"
+
+      "CTRL $mainMod, left, movefocus, l"
+      "CTRL $mainMod, right, movefocus, r"
+      "CTRL $mainMod, up, movefocus, u"
+      "CTRL $mainMod, down, movefocus, d"
 
       "$mainMod, 1, workspace, 1"
       "$mainMod, 2, workspace, 2"
@@ -120,6 +118,10 @@
       "$mainMod, 8, workspace, 8"
       "$mainMod, 9, workspace, 9"
       "$mainMod, 0, workspace, 10"
+      "$mainMod, F1, workspace, 21"
+      "$mainMod, F2, workspace, 22"
+      "$mainMod, F3, workspace, 23"
+      "$mainMod, F4, workspace, 24"
 
       "$mainMod SHIFT, 1, movetoworkspace, 1"
       "$mainMod SHIFT, 2, movetoworkspace, 2"
@@ -131,20 +133,22 @@
       "$mainMod SHIFT, 8, movetoworkspace, 8"
       "$mainMod SHIFT, 9, movetoworkspace, 9"
       "$mainMod SHIFT, 0, movetoworkspace, 10"
+      "$mainMod SHIFT, F1, movetoworkspace, 21"
+      "$mainMod SHIFT, F2, movetoworkspace, 22"
+      "$mainMod SHIFT, F3, movetoworkspace, 23"
+      "$mainMod SHIFT, F4, movetoworkspace, 24"
 
       "$mainMod, mouse_down, workspace, e+1"
       "$mainMod, mouse_up, workspace, e-1"
 
       "$mainMod SHIFT, S, exec, grimblast --freeze copysave area ~/Pictures/$(date +%Y-%m-%d_%H-%m-%s).png"
+
+      "$mainMod, A, exec, kitty -e reca"
     ];
 
     bindm = [
       "$mainMod, mouse:272, movewindow"
       "$mainMod, mouse:273, resizewindow"
-    ];
-
-    windowrulev2 = [
-      "suppressevent maximize, class:.*"
     ];
   };
 

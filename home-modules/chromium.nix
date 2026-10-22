@@ -18,8 +18,8 @@
       { id = "ddkjiahejlhfcafbddmgiahcphecmpfh"; }
       # Dark Reader
       { id = "eimadpbcbfnmbkopoojfekhnkhdbieeh"; }
-      # gruvbox slate
-      { id = "giokfhncgfjkoamdbhfhfhgpikaioccc"; }
+      # gruvbox slate not anymore hehehehje
+      { id = "oabmjgpgajjcdhogjkffbimhfjjobpii"; }
     ];
   };
 }

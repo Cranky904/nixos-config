@@ -15,7 +15,7 @@
     };
   };
 
-  outputs = { self, nixpkgs, home-manager, nixvim, ... }@inputs:
+  outputs = { nixpkgs, home-manager, nixvim, ... }:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs {
@@ -26,26 +26,10 @@
       };
     in
     {
-      nixosConfigurations = {
-        nixos = nixpkgs.lib.nixosSystem {
-          inherit system;
-          modules = [
-
-            ./configuration.nix
-
-            home-manager.nixosModules.home-manager
-            {
-              home-manager.users.cranky = {
-                imports = [
-                  nixvim.homeModules.nixvim
-
-                  
-                  ./home-modules/init.nix
-                ];
-              };
-            }
-          ];
-        };
+      # System and home are activated independently by rebuild.sh and home.sh.
+      nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
+        inherit system;
+        modules = [ ./configuration.nix ];
       };
 
       homeConfigurations = {

@@ -12,6 +12,7 @@
   };
 
   programs.vesktop.enable = true;
+  programs.vesktop.vencord.useSystem = true;
 
   programs.vesktop.settings = {
     appBadge = false;

@@ -2,8 +2,7 @@
 
 {
   programs.kitty.enable = true;
-
-  programs.kitty.theme = "Gruvbox Dark";
+  programs.kitty.themeFile = "Jellybeans";
 
   programs.kitty.font.name = "0xProto Nerd Font Mono";
   programs.kitty.font.package = pkgs.nerd-fonts._0xproto;

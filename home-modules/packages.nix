@@ -1,10 +1,17 @@
 { config, pkgs, ... }:
 
 let
-  aagl-gtk-on-nix = import (builtins.fetchTarball {
-    url = "https://github.com/ezKEa/aagl-gtk-on-nix/archive/main.tar.gz";
-    sha256 = "03d70kl0p98n34hbkrbvg3j1dp381d6g50cgy0rv5b7wbxvv0hla";
-  });
+  whisperModel = pkgs.fetchurl {
+    url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin";
+    hash = "sha256-kh5M+Ghv3Zk9zQgaXaW2w2W/3hFi5ysI11rHUomSCx8=";
+  };
+
+  aagl-gtk-on-nix = import (
+    builtins.fetchTarball {
+      url = "https://github.com/ezKEa/aagl-gtk-on-nix/archive/d82d6d6f66caf4b63fb154e62fad83c627874127.tar.gz";
+      sha256 = "10f8g8ywkhh1cdid5ksng5zfviqycfiwkdc8qhs0l75dc249j7ws";
+    }
+  );
 in
 
 {
@@ -19,6 +26,7 @@ in
     bat
     feh
     mpv
+    whisper-cpp
 
     pgcli
 
@@ -28,40 +36,43 @@ in
 
     obsidian
 
-    anydesk
+    grim
 
     rustc
     cargo
+    libc
+
+    gcc
+
+    codex
+    t3code
+    gh
 
     yarn
-
-    btop
 
     pavucontrol
 
     nodejs
-
-    home-manager
 
     go
     rustfmt
     rust-analyzer
     zig
 
-    xfce.thunar
+    thunar
 
+    playerctl
     keepassxc
 
     pixelorama
 
     # Games
     prismlauncher
+
     aagl-gtk-on-nix.honkers-railway-launcher
 
     # Terminal
-    kitty
     fzf
-    starship
     grc
 
     mumble
@@ -71,18 +82,15 @@ in
 
     # Hyprland ecosystem
     wl-clipboard
-    waybar
-    rofi
-    swaynotificationcenter
     swaylock-effects
     swaybg
     grimblast
     nil
-    hyprpaper
     networkmanagerapplet
     btop
     ddcutil
-    
+    ffmpeg
+
     # HyprPanel
     wireplumber
     libgtop
@@ -98,7 +106,7 @@ in
     # Theming
     vimix-icon-theme
     bibata-cursors
-    gruvbox-gtk-theme
+    gruvbox-dark-gtk
     # Fonts
     mplus-outline-fonts.githubRelease
 
@@ -108,20 +116,23 @@ in
     gnupg
     pinentry-all
 
-#    element-desktop
-
     gamemode
     gamescope
 
-    # Jellyfin
-    jellyfin
-    jellyfin-ffmpeg
-    jellyfin-web
+    # Discord rich presence; independent of the removed Jellyfin server.
     jellyfin-rpc
 
     aerc
     unzip
-
-    heroic
+    unrar
   ];
+
+  xdg.dataFile."reca/models/ggml-tiny.en.bin".source = whisperModel;
+
+  home.sessionVariables = {
+    RECA_PW_RECORD = "${pkgs.pipewire}/bin/pw-record";
+    RECA_FFMPEG = "${pkgs.ffmpeg}/bin/ffmpeg";
+    RECA_WHISPER_CLI = "${pkgs.whisper-cpp}/bin/whisper-cli";
+    RECA_WHISPER_MODEL = "${whisperModel}";
+  };
 }

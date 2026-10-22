@@ -46,6 +46,8 @@
   services.xserver.enable = true;
   services.xserver.desktopManager.runXdgAutostartIfNone = true;
 
+  services.desktopManager.plasma6.enable = true;
+
   services.xserver.xkb = {
     layout = "hu";
     variant = "";
@@ -79,6 +81,7 @@
     alsa.enable = true;
     alsa.support32Bit = true;
     pulse.enable = true;
+    jack.enable = true;
   };
 
 
@@ -91,25 +94,25 @@
     isNormalUser = true;
     description = "Cranky";
     extraGroups = [ "networkmanager" "wheel" "i2c" "docker" "input" ];
-    initialPassword = "asdasdasd";
   };
 
-  boot.kernelModules = ["i2c-dev"];
+  # The NVIDIA module handles nvidia-uvm loading after device setup.
+  boot.kernelModules = [ "i2c-dev" ];
   services.udev.extraRules = ''
     KERNEL=="i2c-[0-9]*", GROUP="i2c", MODE="0660"
   '';
 
   nixpkgs.config.allowUnfree = true;
 
-  networking.firewall.allowedTCPPorts = [ 8096 59100 ];
-  networking.firewall.allowedUDPPorts = [ 8096 59100 59200 ];
+  nix.optimise.automatic = true;
+
+  networking.firewall.allowedTCPPorts = [ 59100 ];
+  networking.firewall.allowedUDPPorts = [ 59100 59200 ];
 
   services.tailscale.enable = true;
 
-  programs.adb.enable = true;
-
   environment.systemPackages = with pkgs; [
-    docker# Did you read the comment?
+    docker
     docker-compose
   ];
 
@@ -135,28 +138,18 @@
 
   services.xserver.videoDrivers = [ "nvidia" ];
   
+  # Both GPUs are Pascal: GTX 1060 (01:00.0) and GTX 1050 Ti (04:00.0).
+  # https://wiki.nixos.org/wiki/NVIDIA#Legacy_branches
   hardware.nvidia = {
     modesetting.enable = true;
     powerManagement.enable = false;
     powerManagement.finegrained = false;
     open = false;
     nvidiaSettings = true;
-    package = config.boot.kernelPackages.nvidiaPackages.stable;
+    package = config.boot.kernelPackages.nvidiaPackages.legacy_580;
 
-    prime = {
-      offload.enable = true;
-      offload.enableOffloadCmd = true;
-
-      nvidiaBusId = "PCI:1:0:0"; # GTX 1060 6GB
-
-      intelBusId = "PCI:4:0:0"; # GTX 1050 TI
-    };
-  };
-
-  services.jellyfin = {
-    enable = true;
-    openFirewall = true;
-    user="cranky";
+    # No Intel/AMD iGPU is involved; do not configure the second NVIDIA GPU
+    # as prime.intelBusId. Both cards are handled by the NVIDIA driver.
   };
 
   fileSystems."/home/cranky/mounts/sdrive" = {

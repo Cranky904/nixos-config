@@ -15,11 +15,12 @@
     };
 
     functions = {
-      mkcd = ''
-        mkdir -p "$argv[1]"
-    cd "$argv[1]"
-      '';
-      description = "Create a directory and change into it.";
+      mkcd = {
+        description = "Create a directory and change into it.";
+        body = ''
+          mkdir -p "$argv[1]"; and cd "$argv[1]"
+        '';
+      };
     };
 
     plugins = [

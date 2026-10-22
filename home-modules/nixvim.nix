@@ -1,8 +1,22 @@
-{ config, pkgs, ... }:
+{ pkgs, ... }:
 
-{
+let
+  # The pinned Nixvim/nixpkgs versions do not provide this syntax plugin.
+  mcfunction = pkgs.vimUtils.buildVimPlugin {
+    pname = "vim-mcfunction";
+    version = "0-unstable-2023-02-03";
+    src = pkgs.fetchFromGitHub {
+      owner = "RubixTheSlime";
+      repo = "vim-mcfunction";
+      rev = "f8ad1bfccb97f8f8e7ee0c52024eac3a8e491a85";
+      hash = "sha256-R2QKpuuT7BULM3tv2lBf5GCJysU8gNtKqyrQHDoOcMo=";
+    };
+  };
+in {
   programs.nixvim = {
     enable = true;
+    # Explicitly share the flake's pinned nixpkgs with the rest of the home.
+    nixpkgs.source = pkgs.path;
 
     plugins.lsp.enable = true;
     plugins.cmp.enable = true;
@@ -10,7 +24,7 @@
     plugins.lsp.servers = {
       rust_analyzer.enable = true;
       rust_analyzer.installCargo = false;
-      rust_analyzer.installRustc= false;
+      rust_analyzer.installRustc = false;
 
       gopls.enable = true;
       zls.enable = true;
@@ -25,7 +39,10 @@
     colorschemes.gruvbox.settings.transparent_background = true;
 
     plugins = {
-      #lualine.enable = true;
+      lualine = {
+        enable = true;
+        settings.options.theme = "gruvbox";
+      };
       telescope.enable = true;
       treesitter.enable = true;
       which-key.enable = true;
@@ -36,6 +53,8 @@
       comment.enable = true;
       vim-surround.enable = true;
     };
+
+    extraPlugins = [ mcfunction ];
 
     keymaps = [
       {
@@ -79,14 +98,6 @@
 
       vim.g.loaded_netrw = 1
       vim.g.loaded_netrwPlugin = 1
-
-      pcall(function()
-        require('lualine').setup({ options = { theme = 'gruvbox' } })
-      end)
-
-      pcall(function() require('gitsigns').setup{} end)
-
-      pcall(function() require('Comment').setup{} end)
     '';
   };
 }
