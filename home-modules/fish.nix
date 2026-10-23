@@ -101,6 +101,7 @@ in
       cat = "bat";
       ".." = "cd ..";
       "..." = "cd ../..";
+      "t3code" = "~/./t3nightly.sh";
     };
 
     functions = {

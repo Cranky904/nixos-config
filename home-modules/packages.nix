@@ -66,6 +66,43 @@ in
 
     pixelorama
 
+    # T3 Dependencies
+
+    nspr
+    nss
+    atk
+    at-spi2-atk
+    at-spi2-core
+    xorg.libXcomposite
+    xorg.libX11
+    xorg.libXext
+    xorg.libXfixes
+    xorg.libXdamage
+    xorg.libXrandr
+    xorg.libxcb
+    glib
+    dbus
+    cups
+    libdrm
+    libgbm
+    libxkbcommon
+    pango
+    cairo
+    alsa-lib
+
+    # T3 artifact dependencies
+    poppler-utils
+    libreoffice
+
+    (python3.withPackages (ps: with ps; [
+      pillow
+      playwright
+      reportlab
+      pypdf
+      python-docx
+      openpyxl
+    ]))
+
     # Games
     prismlauncher
 
