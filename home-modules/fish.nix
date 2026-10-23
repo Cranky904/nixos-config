@@ -21,6 +21,7 @@ let
       + "$git_branch"
       + "$git_status"
       + "[](fg:prev_bg)"
+      + "$cmd_duration"
       + "$line_break"
       + "$character";
     
@@ -41,6 +42,13 @@ let
       truncation_symbol = "…/";
       home_symbol = "~";
       read_only = " ";
+    };
+
+    cmd_duration = {
+      min_time = 2000;
+      show_milliseconds = false;
+      style = "fg:#a6adc8";
+      format = " [took $duration]($style)";
     };
 
     git_branch = {
@@ -140,6 +148,7 @@ in
         gitBg = "#f9e2af";
         nixBg = "#f5c06d";
         arrowColor = "#a6e3a1";
+        nixMode = true;
       });
 }
 
