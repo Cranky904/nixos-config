@@ -139,18 +139,26 @@
 
   services.xserver.videoDrivers = [ "nvidia" ];
   
-  # Both GPUs are Pascal: GTX 1060 (01:00.0) and GTX 1050 Ti (04:00.0).
-  # https://wiki.nixos.org/wiki/NVIDIA#Legacy_branches
+  # RTX 3060 (Ampere); the NVIDIA module provides Vulkan and VA-API drivers.
   hardware.nvidia = {
     modesetting.enable = true;
-    powerManagement.enable = false;
+    powerManagement.enable = true;
     powerManagement.finegrained = false;
-    open = false;
+    open = true;
     nvidiaSettings = true;
-    package = config.boot.kernelPackages.nvidiaPackages.legacy_580;
+    package = config.boot.kernelPackages.nvidiaPackages.stable;
+  };
 
-    # No Intel/AMD iGPU is involved; do not configure the second NVIDIA GPU
-    # as prime.intelBusId. Both cards are handled by the NVIDIA driver.
+  fileSystems."/home/cranky/mounts/edrive" = {
+    device = "/dev/disk/by-uuid/766a65c8-4973-4549-be7b-c0106c3f3f06";
+    fsType = "btrfs";
+    options = [ "rw" "nofail" ];
+  };
+
+  fileSystems."/home/cranky/mounts/tdrive" = {
+    device = "/dev/disk/by-uuid/d0094bcd-892a-4937-88ae-24282d445e77";
+    fsType = "btrfs";
+    options = [ "rw" "nofail" ];
   };
 
   fileSystems."/home/cranky/mounts/sdrive" = {

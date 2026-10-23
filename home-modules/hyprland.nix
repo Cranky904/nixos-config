@@ -14,7 +14,6 @@
 
     # NVIDIA VA-API and GLX; do not force PRIME offload for every application.
     LIBVA_DRIVER_NAME = "nvidia";
-    GBM_BACKEND = "nvidia-drm";
     __GLX_VENDOR_LIBRARY_NAME = "nvidia";
   };
 
@@ -25,6 +24,11 @@
   wayland.windowManager.hyprland.systemd.enable = true;
 
   wayland.windowManager.hyprland.settings = {
+
+    monitor = [
+      "HDMI-A-1, 1920x1080@100, 0x0, 1"
+      "DP-2, 1920x1080@60, 1920x0, 1"
+    ];
 
     misc = {
       disable_hyprland_logo = true;
@@ -44,10 +48,6 @@
       name = "epic-mouse-v1";
       sensitivity = -0.5;
       };
-
-    cursor = {
-      no_hardware_cursors = true;
-    };
 
     decoration = {
       rounding = 16;

@@ -1,1 +1,3 @@
 # Keep flake.lock in version control so system and home use the same pinned inputs.
+__pycache__/
+*.py[cod]

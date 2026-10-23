@@ -33,6 +33,54 @@ keep the local commit for retrying.
 The push uses Git with the existing SSH remote. The `gh` CLI is installed by
 Home Manager for other GitHub operations.
 
+## Rebuild progress
+
+Run `./rebuild` (or `./rebuild.sh`) for a compact terminal display with blue
+Nerd Font spinners, green completion checks, and gray elapsed times. Sudo
+authentication happens before updating inputs. SSH passphrase and Git credential
+prompts remain interactive when pushing.
+
+Spinner frames update only changed terminal lines in one synchronized write;
+completed lines stay still. The display does not erase and redraw the whole
+screen on each tick.
+
+Progress follows Nix's structured activity events: source fetching, lockfile
+updates, configuration evaluation, dependency downloads, and package builds.
+During builds, the current package and its unpack/configure/build/install phase
+appear beside the spinner. Activation also shows the GRUB menu, `/etc`, system
+and user services, and Home Manager when those steps are reported. Git push
+progress separates preparing, compressing, and uploading objects. Cached or
+unneeded steps are omitted, and overlapping downloads/builds can have two active
+spinners.
+
+Build/download totals are shown when Nix reports them. Each command's exit
+status and elapsed time are recorded in the log. After switching, the runner
+checks that `/run/current-system` matches the configuration reported by
+`nixos-rebuild` before committing or pushing.
+
+Real warnings appear in yellow; repeated identical warnings are shown once.
+Compiler/package-build warnings are counted in one yellow row per package,
+with their full text in the log, so a driver build cannot flood the display.
+The expected dirty Git tree notice stays in the log. Errors turn the active
+steps red and show the diagnostic message or the last output lines. Failed
+updates/builds still stop before committing or pushing; a failed push preserves
+the successful rebuild's local commit.
+
+Full output is saved with private file permissions under
+`${XDG_STATE_HOME:-~/.local/state}/nixos-rebuild/`, with the path printed at the
+end. Password input is never logged. Logs are kept until you remove them.
+
+- `./rebuild --demo`: preview representative progress without running commands
+  or changing the configuration.
+- `./rebuild --plain`: use plain text without animation, colors, or special
+  glyphs. Redirected output automatically uses this format; `NO_COLOR` disables
+  colors in an interactive terminal.
+- `python3 -m unittest discover -s tests`: exercise the parser, failure handling,
+  interactive prompts, and workflow using fake commands; no system rebuilds.
+
+The runner uses Python's standard library and the tools already installed by
+this configuration. `home.sh` remains the standalone Home Manager entry point.
+
 Existing account passwords are managed outside this repository. A fresh
 installation must provision its user password separately.
 
@@ -42,15 +90,19 @@ Hyprland's `exec-once`.
 
 ## Hardware
 
-Both graphics cards use NVIDIA's proprietary 580 legacy driver: a GTX 1060 6GB
-at `01:00.0` and a GTX 1050 Ti at `04:00.0`. The connected HDMI display is on
-the GTX 1060. There is no Intel/AMD GPU in this configuration, so the NixOS
-hybrid Intel/AMD–NVIDIA PRIME configuration is not enabled. Hyprland uses
-Aquamarine, so the old `WLR_*` environment overrides are not used.
+The RTX 3060 at `01:00.0` uses NVIDIA's stable driver with open kernel modules,
+DRM modesetting, and video-memory preservation during suspend. NixOS supplies
+the graphics drivers, including Vulkan, 32-bit support, and VA-API acceleration.
+PRIME is not needed for this single-GPU desktop. The old forced GBM backend and
+software cursor workaround are removed.
 
-The existing Hyprland software cursor workaround is retained. Any future manual
-GPU selection should follow the current Aquamarine documentation, including its
-requirements for stable device paths.
+Hyprland keeps the main HDMI display at `1920x1080@100`, position `0x0`, and the
+secondary DP display at `1920x1080@60`, position `1920x0`, both at scale 1.
+Hyprpaper uses the existing wallpaper as a fallback for all connected displays,
+including hotplugged monitors.
+
+`edrive` and `tdrive` mount by UUID under `/home/cranky/mounts/` as Btrfs with
+`rw` and `nofail`. The NVMe root filesystem and `sdrive` declarations are unchanged.
 
 ## Local development dependency
 

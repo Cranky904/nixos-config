@@ -6,7 +6,7 @@
 
   programs.kitty.font.name = "0xProto Nerd Font Mono";
   programs.kitty.font.package = pkgs.nerd-fonts._0xproto;
-  programs.kitty.font.size = 13;
+  programs.kitty.font.size = 9;
 
   programs.kitty.settings = {
     background_opacity = 0.85;
