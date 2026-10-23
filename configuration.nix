@@ -9,7 +9,8 @@
 
   boot.loader.grub.enable = true;
   boot.loader.grub.device = "/dev/nvme0n1";
-  boot.loader.grub.useOSProber = true;
+  # This machine only boots NixOS; no other operating systems need detection.
+  boot.loader.grub.useOSProber = false;
 
   networking = {
     hostName = "nixos";

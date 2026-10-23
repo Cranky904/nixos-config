@@ -73,13 +73,13 @@ in
     atk
     at-spi2-atk
     at-spi2-core
-    xorg.libXcomposite
-    xorg.libX11
-    xorg.libXext
-    xorg.libXfixes
-    xorg.libXdamage
-    xorg.libXrandr
-    xorg.libxcb
+    libxcomposite
+    libx11
+    libxext
+    libxfixes
+    libxdamage
+    libxrandr
+    libxcb
     glib
     dbus
     cups
