@@ -8,19 +8,18 @@ let
     dirBg,
     gitBg,
     nixBg,
-    arrowColor
+    arrowColor,
+    nixMode ? false,
   }: {
     add_newline = true;
 
     format =
       "[](fg:${userBg})"
-      + "$nix_shell"
       + "$username"
       + "[](fg:${userBg} bg:${dirBg})"
       + "$directory"
       + "$git_branch"
       + "$git_status"
-      + "$nix_shell"
       + "[](fg:prev_bg)"
       + "$line_break"
       + "$character";
@@ -29,7 +28,10 @@ let
       show_always = true;
       style_user = "fg:#11111b bg:${userBg} bold";
       style_root = "fg:#f38ba8 bg:${userBg} bold";
-      format = "[ $user ]($style)";
+      format =
+        if nixMode
+        then "[  $user ]($style)"
+        else "[ $user ]($style)";
     };
 
     directory = {
@@ -64,13 +66,6 @@ let
       staged = "+";
       renamed = "»";
       deleted = "✘";
-    };
-
-    nix_shell = {
-      style = "fg:#11111b bg:${nixBg} bold";
-      format =
-        "[](fg:prev_bg bg:${nixBg})"
-        + "[  nix-shell ]($style)";
     };
 
     character = {
