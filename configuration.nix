@@ -90,6 +90,9 @@
 
   programs.fish.enable = true;
 
+  # Run downloaded Linux binaries with the standard loader and common libraries.
+  programs.nix-ld.enable = true;
+
   users.users.cranky = {
     shell = pkgs.fish;
     isNormalUser = true;
@@ -150,7 +153,9 @@
   };
 
   fileSystems."/home/cranky/mounts/edrive" = {
-    device = "/dev/disk/by-uuid/766a65c8-4973-4549-be7b-c0106c3f3f06";
+    # blkid does not detect this filesystem, so udev creates no by-uuid link.
+    # Its Btrfs superblocks confirm edrive; use the SSD's stable hardware ID.
+    device = "/dev/disk/by-id/ata-KINGSTON_SA400S37240G_50026B738071CE9F-part1";
     fsType = "btrfs";
     options = [ "rw" "nofail" ];
   };

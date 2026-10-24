@@ -84,6 +84,13 @@ this configuration. `home.sh` remains the standalone Home Manager entry point.
 Existing account passwords are managed outside this repository. A fresh
 installation must provision its user password separately.
 
+`nix-ld` is enabled for downloaded dynamically linked Linux binaries, using the
+NixOS module's default libraries. Additional binary-specific dependencies belong
+in `programs.nix-ld.libraries`.
+
+See [the optimization audit](OPTIMIZATIONS.md) for measured disk usage and
+suggested maintenance changes.
+
 The desktop uses Hyprland, Quickshell, Vicinae, Hyprpaper, and SwayNC. Home Manager
 owns their session services; Hyprpaper and SwayNC are not also launched through
 Hyprland's `exec-once`.
@@ -101,8 +108,11 @@ secondary DP display at `1920x1080@60`, position `1920x0`, both at scale 1.
 Hyprpaper uses the existing wallpaper as a fallback for all connected displays,
 including hotplugged monitors.
 
-`edrive` and `tdrive` mount by UUID under `/home/cranky/mounts/` as Btrfs with
-`rw` and `nofail`. The NVMe root filesystem and `sdrive` declarations are unchanged.
+`edrive` and `tdrive` mount under `/home/cranky/mounts/` as Btrfs with `rw` and
+`nofail`. `edrive` uses the Kingston SSD's stable hardware ID because filesystem
+probing does not create its UUID link, although its Btrfs superblocks contain the
+expected UUID. `tdrive` uses its filesystem UUID. The NVMe root filesystem and
+`sdrive` declarations are unchanged.
 
 ## Local development dependency
 
