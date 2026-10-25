@@ -9,7 +9,10 @@
   programs.kitty.font.size = 11;
 
   programs.kitty.settings = {
+    # Restoring a maximized state can cover other tiles on Hyprland.
+    remember_window_size = false;
     background_opacity = 0.85;
     background_blur = 1;
+    window_padding_width = 3;
   };
 }
