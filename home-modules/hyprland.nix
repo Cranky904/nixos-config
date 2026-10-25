@@ -100,9 +100,6 @@
       "$mainMod SHIFT, F, fullscreen"
       "$mainMod, P, pseudo"
 
-      "SUPER, SUPER_L, exec, qs ipc call launcher toggle"
-      "$mainMod, W, exec, qs ipc call launcher toggleBar"
-
       "CTRL $mainMod, left, movefocus, l"
       "CTRL $mainMod, right, movefocus, r"
       "CTRL $mainMod, up, movefocus, u"

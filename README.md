@@ -95,6 +95,23 @@ The desktop uses Hyprland, Quickshell, Vicinae, Hyprpaper, and SwayNC. Home Mana
 owns their session services; Hyprpaper and SwayNC are not also launched through
 Hyprland's `exec-once`.
 
+## Quickshell compact clock
+
+Phase 1 displays only the local time in 24-hour `HH:mm` format on the main
+monitor (`HDMI-A-1`).
+The centered white text keeps the previous clock's 12 px regular
+0xProto Nerd Font Mono. Its borderless capsule follows the rounded reference:
+10 px horizontal and 6 px vertical padding, a radius of half its height, and
+8 px clearance from the top and right screen edges. At scale 1 it measures
+58 × 31 px; dimensions follow the font metrics.
+
+The frosted surface uses a `#151515` tint at 75% opacity (`#bf151515`) and
+[native compositor blur](https://quickshell.org/docs/v0.3.1/types/Quickshell.Wayland/BackgroundEffect/)
+clipped to its rounded shape. It sits on the overlay layer above windows,
+including fullscreen windows, reserves no desktop space, and passes pointer
+input through without taking keyboard focus. The old shell toggle bindings
+are removed. Hidden and expanded modes are reserved for later phases.
+
 ## Hardware
 
 The RTX 3060 at `01:00.0` uses NVIDIA's stable driver with open kernel modules,
