@@ -156,9 +156,6 @@ in
     gamemode
     gamescope
 
-    # Discord rich presence; independent of the removed Jellyfin server.
-    jellyfin-rpc
-
     aerc
     unzip
     unrar

@@ -21,7 +21,7 @@ class QmlScenarioTests(unittest.TestCase):
         # Evaluate only the component text; no flake inputs, build, or activation.
         expression = (
             f"let module = import {json.dumps(str(module))} "
-            '{ pkgs = { writeText = name: text: text; cava = "/unused-test-cava"; kitty = "/unused-test-command"; systemd = "/unused-test-command"; python3 = "/unused-test-runtime"; "yt-dlp" = "/unused-test-runtime"; ffmpeg = "/unused-test-runtime"; mpv = "/unused-test-runtime"; nodejs = "/unused-test-runtime"; }; }; '
+            '{ pkgs = { writeText = name: text: text; cava = "/unused-test-cava"; kitty = "/unused-test-command"; systemd = "/unused-test-command"; python3 = "/unused-test-runtime"; "yt-dlp" = "/unused-test-runtime"; ffmpeg = "/unused-test-runtime"; mpv = "/unused-test-runtime"; nodejs = "/unused-test-runtime"; networkmanager = "/unused-test-network"; networkmanagerapplet = "/unused-test-network"; tailscale = "/unused-test-network"; "wl-clipboard" = "/unused-test-network"; }; }; '
             f'in module.xdg.configFile."quickshell/{cls.component_name}.qml".source'
         )
         cls.controller = subprocess.check_output(

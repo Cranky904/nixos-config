@@ -189,7 +189,7 @@ changing the desktop session or making weather requests.
 ## Quickshell expanded modules
 
 Press either Windows key to open the menu on `HDMI-A-1`, with the active-window
-panel at the top and Clock, Media and Usage capsules in a horizontal row below.
+panel at the top and Clock, Media, Usage and Network capsules in a horizontal row below.
 Click the clock to expand it into a calendar with `HH:mm:ss`
 time and Budapest weather alongside it. Clicking the compact clock directly
 also opens the stack with the calendar selected. Windows closes the menu;
@@ -201,7 +201,7 @@ animation finishes, the compact clock remains visible for two seconds,
 independently of idle and hover. Fullscreen still suppresses compact reveals.
 
 The active-window panel slides in first from offscreen left, followed by Clock,
-Media and Usage with overlapping 65 ms delays and 360 ms OutCubic motion.
+Media, Usage and Network with overlapping 65 ms delays and 360 ms OutCubic motion.
 Opening directly through the desktop clock skips its horizontal entrance as it
 moves down and morphs into the calendar. The header and other capsules still
 enter in sequence. Three bottom-left 46 px frosted circles
@@ -226,6 +226,27 @@ or `systemctl reboot`; clicking away or closing the menu cancels the request.
 Rebuild opens Kitty in `~/nixos-config` and runs `~/nixos-config/./rebuild.sh`.
 Command requests are separate from process dispatch so tests can inspect them
 without shutting down, restarting, or rebuilding the machine.
+
+Network uses the standard white inset hover outline and the same capsule-to-panel
+morph as Media. Its 600 × 420 px panel keeps the existing live frosted surfaces:
+rolling download/upload rates and connection details on the left, Tailscale on
+the right. Rates reuse Usage's physical-uplink sampler so VPN/Docker traffic is
+not counted twice. Connection details include IPv4, gateway, DNS, link speed and
+interface totals since boot. “Manage networks” opens the installed NetworkManager
+connection editor; address-copy buttons and device rows copy their respective IPs.
+
+The Tailscale card shows connection state, this device and online/offline peers.
+Its exit-node picker expands upward with the shared easing, closes on an outside
+click, and includes direct routing plus advertised exit nodes. Unavailable nodes
+are disabled; selecting a node uses `tailscale set --exit-node=…` without resetting
+other preferences. Connect/disconnect uses `up`/`down`. When the current user is
+not a configured Tailscale operator, these explicit actions open Kitty with a
+single `sudo tailscale …` command for authentication; the widget never grants
+operator access itself. The menu closes to make room for that terminal or the
+connection editor. Connection and Tailscale snapshots refresh every three seconds
+only while Network is selected. Read-only polling never scans Wi-Fi or changes
+routes. Device/picker lists reserve a separate scrollbar gutter, and empty,
+disconnected, daemon-unavailable and action-error states stay explicit.
 
 The 600 × 220 px active-window panel stays visible throughout the open menu,
 independently of the selected widget, and disappears when the menu closes.
@@ -296,9 +317,8 @@ Celsius and km/h. It refreshes when the calendar opens if its cache is older
 than ten minutes, and every ten minutes while shown. Loading, retry, and stale
 states are explicit; unavailable weather never displays a fabricated value.
 
-Media and Audio share one 58 × 31 px compact control below the clock/calendar,
-with a centered white 18 px Nerd Font speaker icon for muted, low, medium, or
-high output volume. Scrolling up/down changes the default system output by
+Media and Audio share one 58 × 31 px compact control in the horizontal module row,
+with a centered white 12 px “Media” label. Scrolling up/down changes the default system output by
 five percentage points per notch, including accumulated high-resolution wheel
 steps. Volume stays within 0–100%; scrolling preserves mute. External volume,
 mute, and default-output changes are followed through native PipeWire bindings.
@@ -311,11 +331,11 @@ fading or a continuous hover line. Each bar represents a
 frequency band from the same live desktop-audio spectrum, with bass, mids,
 and treble updating together. [CAVA](https://github.com/karlstav/cava) performs
 the FFT at 30 frames per second, explicitly capturing the current output's
-PipeWire monitor. Volume controls the speaker icon and scrolling behavior.
+PipeWire monitor. Scrolling controls the output volume.
 
 Bars grow equally inward and outward from the rail, up to 10 px total length,
 with round caps and 8 px of canvas overdraw to prevent clipping outside the
-glass. The inset keeps their inward ends clear of the speaker icon. Leaving
+glass. The inset keeps their inward ends clear of the label. Leaving
 hover retracts them and releases capture once the drawing is gone. The open
 media widget keeps the same FFT stream for its volume slider. Monitoring stops
 when neither view needs it, muted, at zero volume, or with reduced motion.

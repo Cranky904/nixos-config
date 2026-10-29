@@ -786,7 +786,7 @@ let
         }
 
         function select(module) {
-            if (!["clock", "media", "usage"].includes(module))
+            if (!["clock", "media", "usage", "network"].includes(module))
                 return;
             selected = selected === module ? "" : module;
         }
@@ -3467,6 +3467,465 @@ let
     }
   '';
 
+  networkBackendPython = pkgs.writeText "NetworkBackend.py" ''
+    """Read-only connection snapshots; explicit user actions never reset Tailscale prefs."""
+    import argparse
+    import getpass
+    import ipaddress
+    import json
+    import os
+    from pathlib import Path
+    import re
+    import signal
+    import subprocess
+    import sys
+    import threading
+
+
+    def split_fields(text):
+        fields, value, escaped = [], ''', False
+        for char in text:
+            if escaped:
+                value += char
+                escaped = False
+            elif char == '\\':
+                escaped = True
+            elif char == ':':
+                fields.append(value)
+                value = '''
+            else:
+                value += char
+        fields.append(value + ('\\' if escaped else '''))
+        return fields
+
+
+    def device_info(text):
+        result = {}
+        for line in text.splitlines():
+            key, separator, value = line.partition(':')
+            if separator:
+                result.setdefault(re.sub(r'\[\d+\]$', ''', key), []).append(':'.join(split_fields(value)))
+        return result
+
+
+    def read(path):
+        try:
+            return path.read_text().strip()
+        except (OSError, UnicodeError):
+            return '''
+
+
+    def ipv4(values):
+        for value in values or []:
+            try:
+                ip = ipaddress.ip_address(value)
+                if ip.version == 4:
+                    return str(ip)
+            except ValueError:
+                pass
+        return '''
+
+
+    def tail_state(raw):
+        if not isinstance(raw, dict):
+            return {'available':False, 'status':'Unavailable', 'running':False, 'name':''', 'ip':''', 'peers':[], 'exitNode':''', 'operator':False}
+        state = raw.get('BackendState') or 'Unavailable'
+        own = raw.get('Self') or {}
+        peers = []
+        for key, peer in (raw.get('Peer') or {}).items():
+            if not isinstance(peer, dict):
+                continue
+            peers.append({'key':str(peer.get('ID') or key), 'name':str(peer.get('HostName') or peer.get('DNSName',''').rstrip('.') or 'Device'),
+                          'ip':ipv4(peer.get('TailscaleIPs')), 'online':peer.get('Online') is True,
+                          'os':str(peer.get('OS') or '''), 'exitNode':peer.get('ExitNodeOption') is True,
+                          'selected':peer.get('ExitNode') is True})
+        peers.sort(key=lambda p: (not p['online'], p['name'].casefold(), p['key']))
+        return {'available':True, 'status':state, 'running':state=='Running',
+                'name':str(own.get('HostName') or '''), 'ip':ipv4(raw.get('TailscaleIPs') or own.get('TailscaleIPs')),
+                'peers':peers, 'exitNode':next((p['ip'] for p in peers if p['selected']), '''), 'operator':False}
+
+
+    class Backend:
+        def __init__(self, nmcli='nmcli', tailscale='tailscale', proc=Path('/proc'), sysfs=Path('/sys'), runner=subprocess.run):
+            self.nmcli, self.tailscale, self.proc, self.sysfs, self.runner = nmcli, tailscale, proc, sysfs, runner
+
+        def run(self, command, timeout=2):
+            try:
+                return self.runner(command, capture_output=True, text=True, timeout=timeout,
+                                   env={**os.environ, 'LC_ALL':'C', 'NO_COLOR':'1'}, check=False)
+            except (OSError, subprocess.TimeoutExpired):
+                return subprocess.CompletedProcess(command, 1, ''', ''')
+
+        def json(self, command):
+            result = self.run(command)
+            try:
+                return json.loads(result.stdout) if result.returncode == 0 else None
+            except ValueError:
+                return None
+
+        def network(self):
+            result = self.run([self.nmcli, '-t', '-f', 'DEVICE,TYPE,STATE,CONNECTION', 'device', 'status'])
+            devices = [row for row in (split_fields(line) for line in result.stdout.splitlines())
+                       if len(row) == 4 and row[1] in ('ethernet','wifi')]
+            defaults = []
+            for line in read(self.proc/'net/route').splitlines()[1:]:
+                row = line.split()
+                try:
+                    if row[1]=='00000000' and int(row[3],16)&2:
+                        defaults.append((int(row[6]), row[0]))
+                except (ValueError, IndexError):
+                    pass
+            preferred = min(defaults)[1] if defaults else '''
+            devices.sort(key=lambda d: (not d[2].startswith('connected'), d[0]!=preferred, d[1]!='ethernet', d[0]))
+            if not devices:
+                return {'available':result.returncode==0, 'connected':False, 'state':'Disconnected' if result.returncode==0 else 'Unavailable',
+                        'interface':''', 'name':'No connection', 'type':''', 'address':''', 'gateway':''', 'dns':[], 'speed':None, 'received':None, 'sent':None}
+            interface, kind, status, name = devices[0]
+            fields = self.run([self.nmcli, '-t', '-m', 'multiline', '-f',
+                              'GENERAL.STATE,IP4.ADDRESS,IP4.GATEWAY,IP4.DNS', 'device', 'show', interface])
+            info = device_info(fields.stdout)
+            def first(key):
+                return next((v for v in info.get(key,[]) if v and v!='--'), ''')
+            connected = status.startswith('connected') and fields.returncode==0
+            root = self.sysfs/'class/net'/interface
+            def counter(path):
+                value = read(root/path)
+                return int(value) if value.isdigit() else None
+            connectivity = self.run([self.nmcli, '-g', 'CONNECTIVITY', 'general', 'status']).stdout.strip()
+            state = ('Captive portal' if connectivity=='portal' else 'Limited' if connectivity=='limited' else 'Connected') if connected else 'Connecting' if status.startswith('connecting') else 'Disconnected'
+            return {'available':result.returncode==0, 'connected':connected, 'state':state,
+                    'interface':interface, 'name':name if name and name!='--' else interface, 'type':kind,
+                    'address':first('IP4.ADDRESS').split('/')[0] if connected else ''', 'gateway':first('IP4.GATEWAY') if connected else ''',
+                    'dns':[v for v in info.get('IP4.DNS',[]) if v and v!='--'] if connected else [], 'speed':counter(Path('speed')) if connected else None,
+                    'received':counter(Path('statistics/rx_bytes')) if connected else None, 'sent':counter(Path('statistics/tx_bytes')) if connected else None}
+
+        def tails(self):
+            state = tail_state(self.json([self.tailscale, 'status', '--json']))
+            prefs = self.json([self.tailscale, 'debug', 'prefs']) if state['available'] else None
+            state['operator'] = os.geteuid()==0 or isinstance(prefs,dict) and prefs.get('OperatorUser')==getpass.getuser()
+            return state
+
+        def sample(self):
+            return {'network':self.network(), 'tailscale':self.tails()}
+
+        def action(self, action, target='''):
+            state = self.tails()
+            if not state['available']:
+                return {'error':'Tailscale is unavailable'}
+            if action=='connect':
+                command = [self.tailscale, 'up']
+            elif action=='disconnect':
+                command = [self.tailscale, 'down']
+            elif action=='exit':
+                valid = {p['ip'] for p in state['peers'] if p['exitNode'] and p['online'] and p['ip']}
+                if target and target not in valid:
+                    return {'error':'That exit node is no longer available'}
+                command = [self.tailscale, 'set', '--exit-node='+target]
+            else:
+                return {'error':'Unknown network action'}
+            if not state['operator']:
+                # No policy/operator changes: authenticate interactively for this one command.
+                return {'terminal':['sudo', *command], 'error':'''}
+            result = self.run(command + (['--timeout=10s'] if action=='connect' else []), timeout=15)
+            if result.returncode==0:
+                return {'error':'''}
+            match = re.search(r'https://login\.tailscale\.com/[\w/?=&.%~-]+', result.stdout+'\n'+result.stderr)
+            if action=='connect' and match:
+                return {'url':match.group(0), 'error':'''}
+            return {'error':'Could not change Tailscale; check authorization or try again'}
+
+
+    def main():
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--nmcli', default='nmcli')
+        parser.add_argument('--tailscale', default='tailscale')
+        parser.add_argument('--action', choices=['connect','disconnect','exit'])
+        parser.add_argument('--target', default=''')
+        args = parser.parse_args()
+        backend = Backend(args.nmcli, args.tailscale)
+        if args.action:
+            print(json.dumps(backend.action(args.action, args.target)), flush=True)
+            return
+        stop = threading.Event()
+        signal.signal(signal.SIGTERM, lambda *_:stop.set())
+        signal.signal(signal.SIGINT, lambda *_:stop.set())
+        try:
+            while not stop.is_set():
+                print(json.dumps(backend.sample(), allow_nan=False), flush=True)
+                stop.wait(3)
+        except BrokenPipeError:
+            pass
+
+
+    if __name__=='__main__':
+        main()
+  '';
+
+  networkServiceQml = pkgs.writeText "NetworkService.qml" ''
+    import QtQuick
+    import Quickshell
+    import Quickshell.Io
+
+    Scope {
+        id: service
+        property bool active: false
+        property bool requested: false
+        property bool busy: false
+        property string error: ""
+        property string copied: ""
+        property var state: ({network:{},tailscale:{available:false,status:"Loading",peers:[]}})
+        readonly property alias peersModel: peerRows
+        readonly property alias exitsModel: exitRows
+        signal commandRequested(var command)
+        signal copyRequested(string value)
+        ListModel {id:peerRows}
+        ListModel {id:exitRows}
+        function acceptState(line) {
+            try {
+                const next=JSON.parse(line);
+                if(!next.network || !next.tailscale || !Array.isArray(next.tailscale.peers))return;
+                state=next;
+                const peers=next.tailscale.peers;
+                if(peerRows.count!==peers.length || peers.some((p,i)=>peerRows.get(i).key!==p.key)){
+                    peerRows.clear();peers.forEach(p=>peerRows.append({key:p.key}));
+                }
+                const exits=[{key:"direct"},...peers.filter(p=>p.exitNode)];
+                if(exitRows.count!==exits.length || exits.some((p,i)=>exitRows.get(i).key!==p.key)){
+                    exitRows.clear();exits.forEach(p=>exitRows.append({key:p.key}));
+                }
+            } catch(error) {}
+        }
+        function refresh() {if(active && !requested)requested=true;}
+        function manageNetworks() {commandRequested(["${pkgs.networkmanagerapplet}/bin/nm-connection-editor"]);}
+        function copy(value, key) {
+            if(!value)return;
+            copyRequested(value);copied=key;copyReset.restart();
+        }
+        function action(kind, target) {
+            if(busy || !state.tailscale.available || !["connect","disconnect","exit"].includes(kind))return;
+            error="";busy=true;
+            actionProcess.command=["${pkgs.python3}/bin/python3",Quickshell.shellPath("NetworkBackend.py"),
+                "--nmcli","${pkgs.networkmanager}/bin/nmcli","--tailscale","${pkgs.tailscale}/bin/tailscale",
+                "--action",kind,"--target",target || ""];
+            actionProcess.running=true;
+        }
+        function acceptAction(line) {
+            try {
+                const next=JSON.parse(line);
+                error=next.error || "";
+                if(Array.isArray(next.terminal) && next.terminal.length>1 && next.terminal[0]==="sudo"
+                        && next.terminal[1]==="${pkgs.tailscale}/bin/tailscale")
+                    commandRequested(["${pkgs.kitty}/bin/kitty","--title","Tailscale authorization","-e",...next.terminal]);
+                if(typeof next.url==="string" && /^https:\/\/login\.tailscale\.com\//.test(next.url))Qt.openUrlExternally(next.url);
+            } catch(error) {service.error="Could not read the Tailscale response";}
+        }
+        onActiveChanged:{retry.stop();requested=active;if(!active)copied="";}
+        Process {
+            id:collector
+            running:service.requested
+            command:["${pkgs.python3}/bin/python3",Quickshell.shellPath("NetworkBackend.py"),
+                "--nmcli","${pkgs.networkmanager}/bin/nmcli","--tailscale","${pkgs.tailscale}/bin/tailscale"]
+            stdout:SplitParser {onRead:data=>service.acceptState(data)}
+            onExited:{service.requested=false;if(service.active)retry.restart();}
+        }
+        Process {
+            id:actionProcess
+            stdout:SplitParser {onRead:data=>service.acceptAction(data)}
+            onExited:(code,status)=>{service.busy=false;if(code!==0)service.error="Could not run the Tailscale action";service.refresh();}
+        }
+        Timer {id:retry;interval:2000;onTriggered:if(service.active)service.requested=true}
+        Timer {id:copyReset;interval:1400;onTriggered:service.copied=""}
+    }
+  '';
+
+  networkDetailsQml = pkgs.writeText "NetworkDetails.qml" ''
+    import QtQuick
+    import QtQuick.Controls
+
+    Item {
+        id: details
+        required property var network
+        required property var usage
+        property Item glassSource: null
+        property point glassPosition: Qt.point(0,0)
+        property bool active: false
+        property bool motionEnabled: true
+        property bool choosingExit: false
+        readonly property var connection: network.state.network
+        readonly property var tail: network.state.tailscale
+        readonly property var down: rate(usage.state.network.rx)
+        readonly property var up: rate(usage.state.network.tx)
+        readonly property var exits: [{key:"direct",name:"Direct connection",ip:"",online:true},
+            ...(tail.peers || []).filter(peer=>peer.exitNode)]
+        readonly property string exitName: (tail.peers || []).find(peer=>peer.ip===tail.exitNode && peer.ip)?.name || "Direct connection"
+        width:600;height:420
+        function rate(value) {
+            if(typeof value!=="number" || !Number.isFinite(value))return {text:"—",unit:"KiB/s"};
+            const units=["B/s","KiB/s","MiB/s","GiB/s"];
+            let index=0;while(value>=1024 && index<3){value/=1024;index++;}
+            return {text:value.toFixed(index===0?0:1),unit:units[index]};
+        }
+        function total(value) {
+            if(typeof value!=="number")return "—";
+            const data=rate(value);return data.text+" "+data.unit.replace("/s","");
+        }
+        function osIcon(name) {
+            return ({windows:"",linux:"",macOS:"",darwin:"",android:"",iOS:""})[name] || "󰍹";
+        }
+        function dismissAt(x,y) {
+            const p=exitPicker.mapFromItem(details,x,y);
+            if(p.x<0 || p.y<0 || p.x>exitPicker.width || p.y>exitPicker.height)choosingExit=false;
+        }
+        onActiveChanged:if(!active)choosingExit=false
+        TapHandler {onPressedChanged:if(pressed)details.dismissAt(point.position.x,point.position.y)}
+        QtObject {
+            id:glassContext
+            property Item source:details.glassSource
+            property Item root:details
+            property point origin:details.glassPosition
+            property real scale:details.scale
+            property int revision:0
+            property var layout:[origin.x,origin.y,scale,peers.contentY,exitChoices.contentY,exitPicker.y,exitPicker.height]
+            onLayoutChanged:Qt.callLater(()=>{revision++;})
+        }
+        Item {
+            x:20;y:20;width:252;height:380
+            Text {text:"󰛳";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:24}
+            Text {x:34;y:6;text:"Network";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:12}
+            Repeater {
+                model:[{glyph:"",label:"Download"},{glyph:"",label:"Upload"}]
+                delegate:Item {
+                    required property int index
+                    required property var modelData
+                    readonly property var rateData:index===0?details.down:details.up
+                    x:index*130;y:45;width:122;height:59
+                    Text {text:modelData.glyph;color:"#aaaaaa";font.family:"0xProto Nerd Font Mono";font.pixelSize:11}
+                    Text {x:19;text:modelData.label;color:"#aaaaaa";font.family:"0xProto Nerd Font Mono";font.pixelSize:10}
+                    UsageValue {objectName:index===0?"networkDownload":"networkUpload";y:20;text:rateData.text;unit:rateData.unit;fontSize:23;slots:4;active:details.active;motionEnabled:details.motionEnabled}
+                }
+            }
+            FrostedSurface {
+                y:121;width:parent.width;height:188;radius:22;glass:glassContext;tint:"#bf222222"
+                Text {x:14;y:15;width:parent.width-60;text:details.connection.name || "No connection";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:13;elide:Text.ElideRight}
+                Text {x:14;y:38;width:parent.width-28;text:[details.connection.state || "Loading",details.connection.interface].filter(Boolean).join(" · ");color:"#aaaaaa";font.family:"0xProto Nerd Font Mono";font.pixelSize:9;elide:Text.ElideRight}
+                MediaButton {
+                    objectName:"copyNetworkAddress";x:parent.width-44;y:11;width:30;height:30;iconSize:15
+                    glyph:details.network.copied==="local"?"":"";label:"Copy local address";glass:glassContext
+                    enabled:!!details.connection.address;motionEnabled:details.motionEnabled
+                    onClicked:details.network.copy(details.connection.address,"local")
+                }
+                Repeater {
+                    model:[{label:"IPv4",value:details.connection.address || "—"},
+                        {label:"Gateway",value:details.connection.gateway || "—"},
+                        {label:"DNS",value:(details.connection.dns || []).join(", ") || "—"},
+                        {label:"Link",value:details.connection.speed?details.connection.speed+" Mb/s":details.connection.type==="wifi"?"Wi-Fi":details.connection.type==="ethernet"?"Ethernet":"—"}]
+                    delegate:Item {
+                        required property int index
+                        required property var modelData
+                        x:14;y:69+index*26;width:parent.width-28;height:20
+                        Text {text:modelData.label;color:"#999999";font.family:"0xProto Nerd Font Mono";font.pixelSize:10}
+                        Text {x:60;width:parent.width-x;text:modelData.value;color:"#dddddd";font.family:"0xProto Nerd Font Mono";font.pixelSize:10;horizontalAlignment:Text.AlignRight;elide:Text.ElideRight}
+                    }
+                }
+            }
+            Text {y:321;width:parent.width;text:"Since boot    "+details.total(details.connection.received)+"   "+details.total(details.connection.sent);color:"#999999";font.family:"0xProto Nerd Font Mono";font.pixelSize:9;horizontalAlignment:Text.AlignHCenter}
+            MediaButton {
+                objectName:"manageNetworks";y:344;width:parent.width;height:38;glass:glassContext;label:"Manage networks";motionEnabled:details.motionEnabled
+                onClicked:details.network.manageNetworks()
+                contentItem:Item {
+                    Text {anchors.centerIn:parent;text:"󰒓  Manage networks";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:12}
+                }
+            }
+        }
+        Rectangle {x:281;y:28;width:1;height:364;color:"#16ffffff"}
+        Item {
+            id:tailscaleCard;x:296;y:20;width:284;height:380
+            FrostedSurface {anchors.fill:parent;radius:24;glass:glassContext;tint:"#bf222222"}
+            Text {x:16;y:16;text:"";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:22}
+            Text {x:46;y:20;text:"Tailscale";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:13}
+            MediaButton {
+                id:tailToggle;objectName:"toggleTailscale";x:parent.width-52;y:12;width:36;height:36;iconSize:20
+                glass:glassContext;glyph:details.network.busy?"":"";selected:!!details.tail.running
+                label:details.tail.running?"Disconnect Tailscale":"Connect Tailscale"
+                enabled:!!details.tail.available && !details.network.busy;motionEnabled:details.motionEnabled
+                onClicked:{details.choosingExit=false;details.network.action(details.tail.running?"disconnect":"connect","");}
+            }
+            Item {
+                id:tailBody
+                width:parent.width;height:parent.height
+                opacity:1-exitPicker.progress;enabled:exitPicker.progress===0
+            Rectangle {x:17;y:60;width:5;height:5;radius:2.5;color:details.tail.running?"white":"#777777"}
+            Text {x:30;y:56;width:parent.width-46;text:details.network.busy?"Updating…":({Running:"Connected",Stopped:"Disconnected",NeedsLogin:"Sign in",NeedsMachineAuth:"Awaiting approval",Starting:"Connecting…",Unavailable:"Unavailable",Loading:"Loading…"})[details.tail.status] || details.tail.status || "Unavailable";color:"#aaaaaa";font.family:"0xProto Nerd Font Mono";font.pixelSize:10;elide:Text.ElideRight}
+            Text {x:16;y:80;width:parent.width-70;text:details.tail.name || "This device";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:12;elide:Text.ElideRight}
+            Text {x:16;y:100;text:details.tail.ip || "—";color:"#bbbbbb";font.family:"0xProto Nerd Font Mono";font.pixelSize:10}
+            MediaButton {
+                objectName:"copyTailscaleAddress";x:parent.width-48;y:82;width:30;height:30;iconSize:15
+                glass:glassContext;glyph:details.network.copied==="self"?"":"";label:"Copy Tailscale address"
+                enabled:!!details.tail.ip;motionEnabled:details.motionEnabled;onClicked:details.network.copy(details.tail.ip,"self")
+            }
+            Rectangle {x:16;y:126;width:parent.width-32;height:1;color:"#16ffffff"}
+            Text {x:16;y:141;text:"Devices";color:"#aaaaaa";font.family:"0xProto Nerd Font Mono";font.pixelSize:10}
+            Text {x:134;y:141;width:parent.width-x-16;text:(details.tail.peers || []).filter(p=>p.online).length+" online";color:"#888888";font.family:"0xProto Nerd Font Mono";font.pixelSize:10;horizontalAlignment:Text.AlignRight}
+            ListView {
+                id:peers;objectName:"tailscalePeers";x:14;y:166;width:parent.width-42;height:133;spacing:5;clip:true
+                model:details.network.peersModel
+                delegate:MediaButton {
+                    required property int index
+                    readonly property var peer:details.tail.peers[index] || ({})
+                    objectName:"tailPeer-"+(peer.key || "");width:peers.width;height:51;glass:glassContext
+                    label:"Copy "+peer.name+" address";motionEnabled:details.motionEnabled;enabled:!!peer.ip
+                    onClicked:details.network.copy(peer.ip,peer.key)
+                    contentItem:Item {
+                        Text {x:12;anchors.verticalCenter:parent.verticalCenter;text:details.network.copied===parent.parent.peer.key?"":details.osIcon(parent.parent.peer.os);color:parent.parent.peer.online?"white":"#777777";font.family:"0xProto Nerd Font Mono";font.pixelSize:20}
+                        Text {x:43;y:9;width:parent.width-x-12;text:parent.parent.peer.name || "";color:parent.parent.peer.online?"white":"#aaaaaa";font.family:"0xProto Nerd Font Mono";font.pixelSize:11;elide:Text.ElideRight}
+                        Text {x:43;y:29;width:parent.width-x-12;text:parent.parent.peer.online?parent.parent.peer.ip || "": "Offline";color:"#888888";font.family:"0xProto Nerd Font Mono";font.pixelSize:9;elide:Text.ElideRight}
+                    }
+                }
+                ScrollBar.vertical:PlaylistScrollBar {parent:peers.parent;anchors.top:peers.top;anchors.bottom:peers.bottom;anchors.left:peers.right;anchors.leftMargin:6}
+            }
+            Text {x:16;y:195;width:parent.width-32;visible:peers.count===0;text:details.tail.running?"No other devices":"Not connected";color:"#888888";font.family:"0xProto Nerd Font Mono";font.pixelSize:11;horizontalAlignment:Text.AlignHCenter}
+            Text {x:16;y:308;text:"Exit node";color:"#999999";font.family:"0xProto Nerd Font Mono";font.pixelSize:9}
+            MediaButton {
+                objectName:"chooseExitNode";x:14;y:326;width:parent.width-28;height:38;glass:glassContext
+                label:"Choose exit node";motionEnabled:details.motionEnabled
+                visible:exitPicker.progress===0;enabled:!!details.tail.running && !details.network.busy
+                onClicked:details.choosingExit=true
+                contentItem:Item {
+                    Text {x:12;anchors.verticalCenter:parent.verticalCenter;width:parent.width-40;text:details.exitName;color:"white";opacity:parent.parent.enabled?1:0.4;font.family:"0xProto Nerd Font Mono";font.pixelSize:11;elide:Text.ElideRight}
+                    Text {anchors.right:parent.right;anchors.rightMargin:12;anchors.verticalCenter:parent.verticalCenter;text:"";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:13}
+                }
+            }
+            }
+            MediaMorphPanel {
+                id:exitPicker;objectName:"exitNodePicker";x:14;y:326-(fullHeight-38)*progress
+                compactWidth:tailscaleCard.width-28;fullWidth:compactWidth;fullHeight:310;glass:glassContext
+                opened:details.choosingExit;motionEnabled:details.motionEnabled
+                Item {
+                    anchors.fill:parent;opacity:exitPicker.progress;enabled:exitPicker.opened
+                    Text {x:14;y:16;text:"Exit node";color:"#aaaaaa";font.family:"0xProto Nerd Font Mono";font.pixelSize:12}
+                    ListView {
+                        id:exitChoices;objectName:"exitNodeChoices";x:8;y:44;width:parent.width-32;height:parent.height-y-12;spacing:5;clip:true
+                        model:details.network.exitsModel
+                        delegate:MediaButton {
+                            required property int index
+                            readonly property var modelData:details.exits[index] || ({})
+                            width:exitChoices.width;height:48;glass:glassContext
+                            label:"Use "+modelData.name;selected:(modelData.ip || "")===(details.tail.exitNode || "")
+                            motionEnabled:details.motionEnabled;enabled:modelData.online && !details.network.busy
+                            onClicked:{details.choosingExit=false;details.network.action("exit",modelData.ip);}
+                            contentItem:Item {
+                                Text {x:12;anchors.verticalCenter:parent.verticalCenter;width:parent.width-24;text:parent.parent.modelData.name;color:parent.parent.enabled?"white":"#777777";font.family:"0xProto Nerd Font Mono";font.pixelSize:11;elide:Text.ElideRight}
+                            }
+                        }
+                        ScrollBar.vertical:PlaylistScrollBar {parent:exitChoices.parent;anchors.top:exitChoices.top;anchors.bottom:exitChoices.bottom;anchors.left:exitChoices.right;anchors.leftMargin:6}
+                    }
+                }
+            }
+        }
+        Text {x:20;y:402;width:560;height:14;visible:details.network.error!=="";text:details.network.error;color:"#c4aaaa";font.family:"0xProto Nerd Font Mono";font.pixelSize:9;elide:Text.ElideRight}
+    }
+  '';
+
   windowBackendPython = pkgs.writeText "WindowBackend.py" ''
     """Window lifetimes and read-only application process telemetry."""
     import configparser
@@ -4226,6 +4685,13 @@ let
             expanded: expandedState.open && (expandedState.selected === "usage" || windowService.desktop)
         }
 
+        NetworkService {
+            id: networkService
+            active: expandedState.mounted && expandedState.selected === "network"
+            onCommandRequested: command => {root.closeMenu();Quickshell.execDetached(command);}
+            onCopyRequested: value => Quickshell.execDetached(["${pkgs.wl-clipboard}/bin/wl-copy", "--", value])
+        }
+
         WeatherService {
             id: weatherService
             active: expandedState.open && expandedState.selected === "clock"
@@ -4342,6 +4808,11 @@ let
                     return p.x >= 0 && p.y >= 0 && p.x <= item.width && p.y <= item.height;
                 }
                 function blankClicked(x, y) {
+                    if (moduleDeck.displayed === "network") {
+                        const details = dummyTiles.itemAt(2).networkDetailsItem;
+                        const p = details.mapFromItem(clockWindow.contentItem, x, y);
+                        details.dismissAt(p.x, p.y);
+                    }
                     if (contains(powerConfirmation, x, y) || contains(windowHeader, x, y)) return;
                     sessionActions.cancel();
                     if (contains(modulePanel, x, y)) {
@@ -4420,7 +4891,7 @@ let
                     height: clockWindow.height
                     active: expandedState.mounted
                     reveal: expandedState.progress
-                    cutouts: [clockTile, dummyTiles.itemAt(0), dummyTiles.itemAt(1)]
+                    cutouts: [clockTile, ...Array.from({length:dummyTiles.count}, (_,i)=>dummyTiles.itemAt(i))]
                         .filter(tile => tile && tile.visible).map(tile => {
                             // Both capsule parents use window coordinates; read their positions
                             // explicitly so cutouts track every frame of the parent change.
@@ -4494,7 +4965,7 @@ let
                     id: modulePanel
                     objectName: "modulePanel"
                     readonly property var sourceButton: moduleDeck.displayed === "clock" ? clockTile
-                        : dummyTiles.itemAt(moduleDeck.displayed === "media" ? 0 : 1)
+                        : dummyTiles.itemAt(dummyTiles.model.findIndex(item=>item.key===moduleDeck.displayed))
                     readonly property real sourceX: moduleDeck.displayed === "clock" ? 0 : sourceButton?.restX ?? 0
                     readonly property real sourceWidth: sourceButton?.compactWidth ?? 58
                     readonly property real targetHeight: (moduleDeck.displayed === "clock" ? 310 : 420) * clockWindow.detailsScale
@@ -4515,7 +4986,7 @@ let
                     width: clockWindow.moduleWidth; height: 31
                     z: 1
                     readonly property int extractedIndex: moduleDeck.displayed === "clock" ? 0
-                        : moduleDeck.displayed === "media" ? 1 : moduleDeck.displayed === "usage" ? 2 : -1
+                        : moduleDeck.displayed ? dummyTiles.model.findIndex(item=>item.key===moduleDeck.displayed)+1 : -1
                     readonly property real vacancy: (modulePanel.sourceWidth + 8) * moduleDeck.progress
 
                     ModuleTile {
@@ -4599,7 +5070,8 @@ let
                         id: dummyTiles
                         model: [
                             {key: "media", label: "Media", icon: ""},
-                            {key: "usage", label: "Usage", icon: ""}
+                            {key: "usage", label: "Usage", icon: ""},
+                            {key: "network", label: "Network", icon: "󰛳"}
                         ]
                         delegate: ModuleTile {
                             id: dummy
@@ -4623,13 +5095,14 @@ let
                             x: morphProgress > 0 ? 0 : restX + moduleEntrance.offset
                             y: 0
                             readonly property alias mediaDetailsItem: mediaDetails
+                            readonly property alias networkDetailsItem: networkDetails
                             readonly property bool audioRevealed: modelData.key === "media"
                                 && mediaOutline.visible && (hovered || mediaOutline.progress > 0)
                             glassSource: expandedState.mounted ? backdrop.blurredScene : null
                             glassPosition: morphProgress > 0 ? Qt.point(modulePanel.x, modulePanel.y) : Qt.point(modules.x + x, modules.y)
                             glassOpacity: expandedState.progress
                             accessibleLabel: modelData.key === "media" ? audioService.description : "Open " + modelData.label
-                            outlineEnabled: false
+                            outlineEnabled: modelData.key === "network"
                             clip: modelData.key !== "media" || morphProgress > 0
                             compactWidth: modelData.key === "media" ? 58 : Math.ceil(label.implicitWidth) + 20
                             motionEnabled: root.motionEnabled
@@ -4644,10 +5117,10 @@ let
                                 id: label
                                 x: dummy.modelData.key === "media" ? (dummy.compactWidth - width) / 2 : 10
                                 y: (31 - height) / 2
-                                text: dummy.modelData.key === "media" ? audioService.icon : dummy.modelData.label
+                                text: dummy.modelData.label
                                 color: "#ffffff"
                                 font.family: "0xProto Nerd Font Mono"
-                                font.pixelSize: dummy.modelData.key === "media" ? 18 : 12
+                                font.pixelSize: 12
                                 opacity: Math.max(0, 1 - dummy.morphProgress * 4)
                             }
 
@@ -4683,6 +5156,23 @@ let
                                 enabled: visible && moduleDeck.interactive
                                 media: mediaService
                                 audio: audioService
+                                motionEnabled: root.motionEnabled
+                            }
+
+                            NetworkDetails {
+                                id: networkDetails
+                                objectName: "networkDetails"
+                                width: 600; height: 420
+                                scale: clockWindow.detailsScale
+                                transformOrigin: Item.TopLeft
+                                glassSource: dummy.glassSource
+                                glassPosition: dummy.glassPosition
+                                opacity: moduleDeck.contentProgress
+                                visible: dummy.modelData.key === "network" && dummy.morphProgress > 0 && opacity > 0
+                                enabled: visible && moduleDeck.interactive
+                                active: networkService.active && visible
+                                network: networkService
+                                usage: usageService
                                 motionEnabled: root.motionEnabled
                             }
 
@@ -4725,7 +5215,7 @@ let
                             MenuEntrance {
                                 id: actionEntrance
                                 open: expandedState.open
-                                order: actionButton.index + 4
+                                order: actionButton.index + dummyTiles.count + 2
                                 distance: actionButton.index * 56 + 54
                                 motionEnabled: root.motionEnabled
                             }
@@ -4814,6 +5304,9 @@ in {
   xdg.configFile."quickshell/BackdropGeometry.qml".source = backdropGeometryQml;
   xdg.configFile."quickshell/FrostedBackdrop.qml".source = frostedBackdropQml;
   xdg.configFile."quickshell/ClockDetails.qml".source = clockDetailsQml;
+  xdg.configFile."quickshell/NetworkBackend.py".source = networkBackendPython;
+  xdg.configFile."quickshell/NetworkService.qml".source = networkServiceQml;
+  xdg.configFile."quickshell/NetworkDetails.qml".source = networkDetailsQml;
   xdg.configFile."quickshell/UsageBackend.py".source = usageBackendPython;
   xdg.configFile."quickshell/UsageService.qml".source = usageServiceQml;
   xdg.configFile."quickshell/UsageOutline.qml".source = usageOutlineQml;
