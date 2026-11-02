@@ -45,6 +45,7 @@ in
     gcc
 
     codex
+    claude-code
     t3code
     gh
 

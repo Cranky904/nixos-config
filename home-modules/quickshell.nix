@@ -786,7 +786,7 @@ let
         }
 
         function select(module) {
-            if (!["clock", "media", "usage", "network"].includes(module))
+            if (!["clock", "media", "usage", "network", "apps"].includes(module))
                 return;
             selected = selected === module ? "" : module;
         }
@@ -4273,12 +4273,15 @@ let
         }
         function refresh() {
             const now = Date.now(), old = windows;
-            windows = clients.filter(c => c && addressValid(c.address)).map(c => {
+            windows = clients.filter(c => c && c.mapped !== false && addressValid(c.address)).map(c => {
                 const key=String(c.stableId ?? c.address)+":"+String(c.pid);
                 const prior = old.find(w => w.key === key);
+                const entry = DesktopEntries.heuristicLookup(c.class || c.initialClass || "");
                 return {address:c.address,pid:c.pid || 0,key:key,
                     className:c.class || c.initialClass || "", title:c.title || c.class || "",
-                    workspace:c.workspace?.id ?? -1,born:prior?.born ?? now,
+                    appName:entry?.name || c.class || c.initialClass || "Application",
+                    workspace:c.workspace?.id ?? -1,workspaceName:c.workspace?.name || "",
+                    pinned:c.pinned === true,born:prior?.born ?? now,
                     left:c.at?.[0] ?? 0,top:c.at?.[1] ?? 0,width:c.size?.[0] ?? 0,height:c.size?.[1] ?? 0,
                     iconName:iconFor(c.class || c.initialClass || "")};
             });
@@ -4323,9 +4326,9 @@ let
             if (addressValid(address) && windows.some(w => w.address === address))
                 dispatchRequested("focuswindow address:"+address);
         }
-        function closeWindow() {
-            if (current && addressValid(current.address))
-                dispatchRequested("closewindow address:"+current.address);
+        function closeWindow(address = selectedAddress) {
+            if (addressValid(address) && windows.some(w => w.address === address))
+                dispatchRequested("closewindow address:"+address);
         }
         onClientsChanged: Qt.callLater(refresh)
         onFocusedChanged: Qt.callLater(refresh)
@@ -4335,7 +4338,8 @@ let
         Connections {
             target:Hyprland
             function onRawEvent(event) {
-                if (["activewindowv2","workspacev2","openwindow","closewindow","movewindowv2"].includes(event.name))
+                if (["activewindowv2","workspacev2","openwindow","closewindow","movewindowv2",
+                    "windowtitlev2","pin","activespecial","activespecialv2"].includes(event.name))
                     Qt.callLater(() => {service.refresh();focusQuery.query();});
             }
         }
@@ -4605,8 +4609,370 @@ let
     }
   '';
 
+  appWindowButtonQml = pkgs.writeText "AppWindowButton.qml" ''
+    import QtQuick
+    import QtQuick.Controls
+    import Quickshell
+    import Quickshell.Widgets
+
+    AbstractButton {
+        id: button
+        required property var windowData
+        property url iconSource: ""
+        property QtObject glass: null
+        property bool compact: false
+        property bool showWorkspace: true
+        property bool selected: false
+        property bool motionEnabled: true
+        readonly property bool highlighted: hovered || visualFocus
+        property real hoverProgress: highlighted ? 1 : 0
+        Behavior on hoverProgress {NumberAnimation {duration:button.motionEnabled?(button.highlighted?300:220):0;easing.type:Easing.OutCubic}}
+        readonly property color iconTint: {
+            let chosen=Qt.rgba(21/255,21/255,21/255,1),score=0;
+            const colors=!iconSource ? [] : String(iconSource).startsWith("image:") ? providerPalette.colors : palette.colors;
+            for (const color of colors) {
+                const saturation=Math.max(color.r,color.g,color.b)-Math.min(color.r,color.g,color.b);
+                if (color.a>0.5 && saturation>score) {score=saturation;chosen=color;}
+            }
+            const mix=0.18,base=21/255;
+            return Qt.rgba(base*(1-mix)+chosen.r*mix,base*(1-mix)+chosen.g*mix,base*(1-mix)+chosen.b*mix,0.75);
+        }
+        readonly property color neutralTint: selected ? "#bf303030" : "#bf222222"
+        readonly property color trailingTint: Qt.rgba(
+            neutralTint.r+(iconTint.r-neutralTint.r)*hoverProgress,
+            neutralTint.g+(iconTint.g-neutralTint.g)*hoverProgress,
+            neutralTint.b+(iconTint.b-neutralTint.b)*hoverProgress,0.75)
+        readonly property string workspaceLabel: windowData.workspace > 0 ? String(windowData.workspace)
+            : (windowData.workspaceName || "").replace(/^special:/, "") || "S"
+        signal closeRequested()
+        implicitWidth: compact ? 66 : 224
+        implicitHeight: compact ? 66 : 112
+        padding: 0
+        hoverEnabled: true
+        Accessible.name: (windowData.appName || windowData.className) + ", " + windowData.title
+            + (showWorkspace ? ", workspace " + workspaceLabel : "")
+        ToolTip.visible: hovered
+        ToolTip.delay: 700
+        ToolTip.text: windowData.title + (showWorkspace ? " · " + workspaceLabel : "")
+        // Each tile owns its palette and rounded surface; neighboring icon
+        // colors never enter this tile's gradient or its hover transition.
+        ColorQuantizer {
+            id:palette
+            source:String(button.iconSource).startsWith("image:") ? "" : button.iconSource
+            depth:3;rescaleSize:48
+        }
+        // ColorQuantizer accepts local files only. Tray pixmaps and theme
+        // icons use Qt image providers, so sample those once per icon update
+        // in a private 48px canvas, without writing temporary raster files.
+        Canvas {
+            id:providerPalette
+            width:48;height:48;opacity:0
+            property var colors:[]
+            property string source:String(button.iconSource).startsWith("image:") ? String(button.iconSource) : ""
+            property string loadedSource:""
+            function load() {
+                colors=[];
+                if(!available)return;
+                if(loadedSource)unloadImage(loadedSource);
+                loadedSource=source;
+                if(source)loadImage(source);
+            }
+            onSourceChanged:load()
+            onAvailableChanged:if(available)load()
+            onImageLoaded:requestPaint()
+            onPaint: {
+                if(!source || !isImageLoaded(source))return;
+                const ctx=getContext("2d");ctx.clearRect(0,0,width,height);
+                ctx.drawImage(source,0,0,width,height);
+                const pixels=ctx.getImageData(0,0,width,height).data,buckets={};
+                for(let i=0;i<pixels.length;i+=4) {
+                    if(pixels[i+3]<128)continue;
+                    const r=pixels[i],g=pixels[i+1],b=pixels[i+2];
+                    const key=(r>>5)*64+(g>>5)*8+(b>>5);
+                    if(!buckets[key])buckets[key]={count:0,r:0,g:0,b:0};
+                    const bucket=buckets[key];bucket.count++;bucket.r+=r;bucket.g+=g;bucket.b+=b;
+                }
+                colors=Object.values(buckets).sort((a,b)=>b.count-a.count).slice(0,8)
+                    .map(bucket=>Qt.rgba(bucket.r/bucket.count/255,bucket.g/bucket.count/255,bucket.b/bucket.count/255,1));
+            }
+        }
+        background: FrostedSurface {
+            id: tileSurface
+            radius: 22
+            glass: button.glass
+            tintGradient: Gradient {
+                orientation: Gradient.Horizontal
+                GradientStop {position:0;color:button.iconTint}
+                GradientStop {position:1;color:button.trailingTint}
+            }
+            HoverOutline {
+                anchors.fill: parent
+                cornerRadius: tileSurface.radius
+                hovered: button.highlighted
+                active: button.enabled
+                motionEnabled: button.motionEnabled
+            }
+        }
+        contentItem: Item {
+            Item {
+                id: iconFrame
+                x: button.compact ? (parent.width-width)/2 : 14
+                y: (parent.height-height)/2
+                width: button.compact ? 38 : 64
+                height: width
+                Item {
+                    objectName: "appIconTransform"
+                    anchors.fill: parent
+                    scale: button.highlighted ? 1.12 : 1
+                    Behavior on scale {NumberAnimation {duration:button.motionEnabled?180:0;easing.type:Easing.OutCubic}}
+                    Image {
+                        id: appIcon
+                        anchors.fill: parent
+                        source: button.iconSource
+                        fillMode: Image.PreserveAspectFit
+                        asynchronous: true;smooth: true;mipmap: true
+                        sourceSize: Qt.size(Math.ceil(width*1.12*Screen.devicePixelRatio), Math.ceil(height*1.12*Screen.devicePixelRatio))
+                    }
+                    Text {
+                        anchors.centerIn: parent
+                        visible: appIcon.status !== Image.Ready
+                        text: "";color: "white"
+                        font.family: "0xProto Nerd Font Mono"
+                        font.pixelSize: button.compact ? 28 : 46
+                    }
+                }
+                FrostedSurface {
+                    objectName: "appWorkspaceBadge"
+                    visible: button.showWorkspace
+                    x: parent.width - width + 3;y: parent.height - height + 3
+                    width: button.compact ? 22 : 28;height: width
+                    radius: width/2
+                    glass: button.glass;tint: "#df151515"
+                    WorkspaceBadge {
+                        anchors.centerIn: parent
+                        height: parent.height
+                        expanded: true;gap: 0;minimumIconWidth: 16
+                        workspaceId: button.windowData.workspace
+                        motionEnabled: button.motionEnabled
+                    }
+                }
+            }
+            Text {
+                x: 94;y: (parent.height-height)/2;width: parent.width-x-14
+                visible: !button.compact
+                text: button.windowData.appName || button.windowData.className
+                color: "white";font.family: "0xProto Nerd Font Mono";font.pixelSize: 12
+                wrapMode: Text.Wrap;maximumLineCount: 2;elide: Text.ElideRight
+            }
+        }
+        // The normal button retains left-click and keyboard activation. Only
+        // middle clicks are intercepted here, including in the compact rail.
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.MiddleButton
+            onClicked: button.closeRequested()
+        }
+        HoverHandler {cursorShape: Qt.PointingHandCursor}
+    }
+  '';
+
+  appTrayButtonQml = pkgs.writeText "AppTrayButton.qml" ''
+    import QtQuick
+    import Quickshell
+
+    AppWindowButton {
+        id: button
+        required property var trayItem
+        property bool active: true
+        property bool closePending: false
+        compact: true
+        showWorkspace: false
+        windowData: ({appName:trayItem.title || trayItem.id || "Application",
+            title:trayItem.tooltipTitle || trayItem.title || trayItem.id || "Application",workspace:0})
+        iconSource: {
+            const source=trayItem.icon || "";
+            if(!source.startsWith("image://icon/"))return source;
+            // Steam and other apps publish icons outside the desktop theme.
+            if(source.includes("?path="))return source;
+            const name=decodeURIComponent(source.slice("image://icon/".length).split("?")[0]);
+            return Quickshell.iconPath(name,true);
+        }
+
+        function showMenu() {
+            if (!active || !trayItem.hasMenu) return;
+            const position=mapToItem(null,width,0);
+            trayItem.display(button.QsWindow.window,Math.round(position.x),Math.round(position.y));
+        }
+        function quitEntry(entries) {
+            const names=[trayItem.title,trayItem.id].filter(Boolean).map(name=>name.toLowerCase());
+            return entries.find(entry=>{
+                const label=entry.text.replace(/&/g,"").split("\t")[0].replace(/…|\.\.\./g,"").trim().toLowerCase();
+                return entry.enabled && !entry.isSeparator && !entry.hasChildren
+                    && (label==="quit" || label==="exit" || names.some(name=>label==="quit "+name || label==="exit "+name));
+            });
+        }
+        function attemptClose() {
+            if (!closePending || !active) return;
+            const entry=quitEntry(menu.children.values);
+            if (entry) {closePending=false;closeTimeout.stop();entry.triggered();}
+        }
+        onClicked: {
+            if (!active) return;
+            if (trayItem.onlyMenu) showMenu();
+            else trayItem.activate();
+        }
+        onCloseRequested: {
+            // StatusNotifier has no universal close method. Use the app's
+            // explicit Quit/Exit menu action, never secondaryActivate or kill.
+            if (!active || !trayItem.hasMenu) return;
+            closePending=true;closeTimeout.restart();attemptClose();
+        }
+        onActiveChanged: if(!active) {closePending=false;closeTimeout.stop();}
+        QsMenuOpener {
+            id: menu
+            menu: button.active && button.trayItem.hasMenu ? button.trayItem.menu : null
+            onChildrenChanged: button.attemptClose()
+        }
+        Timer {
+            id: closeTimeout
+            interval: 500
+            onTriggered: {
+                button.attemptClose();
+                if (button.closePending) {button.closePending=false;button.showMenu();}
+            }
+        }
+        MouseArea {anchors.fill:parent;acceptedButtons:Qt.RightButton;onClicked:button.showMenu()}
+    }
+  '';
+
+  appsDetailsQml = pkgs.writeText "AppsDetails.qml" ''
+    import QtQuick
+    import QtQuick.Controls
+
+    Item {
+        id: details
+        required property var window
+        property var trayItems: []
+        property Item glassSource: null
+        property point glassPosition: Qt.point(0,0)
+        property bool active: false
+        property bool motionEnabled: true
+        readonly property alias windowsModel: windowRows
+        readonly property int trayCount: trayButtons.count
+        width: 600;height: 420
+
+        // Update roles in place: focus, titles and icon refreshes must not reset
+        // a hovered tile, its animation, or either scroll position.
+        function reconcile(model, rows) {
+            const keys = rows.map(row=>row.key);
+            for (let i=model.count-1;i>=0;--i)
+                if (!keys.includes(model.get(i).key)) model.remove(i);
+            rows.forEach((row,index)=>{
+                let found=index;
+                while (found<model.count && model.get(found).key!==row.key) found++;
+                if (found===model.count) model.insert(index,row);
+                else {
+                    if (found!==index) model.move(found,index,1);
+                    for (const role of Object.keys(row))
+                        if (model.get(index)[role]!==row[role]) model.setProperty(index,role,row[role]);
+                }
+            });
+        }
+        function refresh() {
+            const rows = window.windows.map(w=>({key:w.key,address:w.address,title:w.title,
+                appName:w.appName || w.className,className:w.className,workspace:w.workspace,
+                workspaceName:w.workspaceName || ""}));
+            reconcile(windowRows,rows);
+        }
+        Component.onCompleted: if(active) refresh()
+        onWindowChanged: if(active) refresh()
+        onActiveChanged: if(active) refresh()
+        Connections {
+            target: details.window
+            enabled: details.active
+            function onWindowsChanged() {details.refresh();}
+        }
+        ListModel {id:windowRows}
+        QtObject {
+            id: glassContext
+            property Item source: details.glassSource
+            property Item root: details
+            property point origin: details.glassPosition
+            property real scale: details.scale
+            property int revision: 0
+            property var layout: [origin.x,origin.y,scale,apps.contentY,trayApps.contentY]
+            onLayoutChanged: Qt.callLater(()=>{revision++;})
+        }
+        Flickable {
+            id: apps
+            objectName: "windowApps"
+            x: 20;y: 20;width: 472;height: 380
+            contentWidth: width
+            contentHeight: appsGrid.implicitHeight
+            boundsBehavior: Flickable.StopAtBounds
+            clip: true
+            ScrollBar.vertical: PlaylistScrollBar {width:6}
+            Grid {
+                id: appsGrid
+                width: apps.width-12
+                columns: 2;spacing: 12
+                Repeater {
+                    model: windowRows
+                    delegate: AppWindowButton {
+                        required property var model
+                        objectName: "app-"+model.address
+                        windowData: model
+                        iconSource: details.window.icons[model.key] || ""
+                        selected: details.window.selectedAddress===model.address
+                        glass: glassContext;motionEnabled: details.motionEnabled
+                        onClicked: details.window.focusWindow(model.address)
+                        onCloseRequested: details.window.closeWindow(model.address)
+                    }
+                }
+            }
+        }
+        Text {
+            x: 32;y: (parent.height-height)/2;width: 436
+            visible: windowRows.count===0
+            text: "No open windows"
+            color: "#aaaaaa";font.family: "0xProto Nerd Font Mono";font.pixelSize: 12
+            horizontalAlignment: Text.AlignHCenter
+        }
+        Rectangle {
+            x: 501;y: 28;width: 1;height: 364
+            color: "#16ffffff";visible: details.trayCount>0
+        }
+        Flickable {
+            id: trayApps
+            objectName: "trayApps"
+            x: 514;y: 20;width: 76;height: 380
+            contentWidth: width
+            contentHeight: trayColumn.implicitHeight
+            boundsBehavior: Flickable.StopAtBounds
+            clip: true
+            ScrollBar.vertical: PlaylistScrollBar {width:6}
+            Column {
+                id: trayColumn
+                width: trayApps.width-10;spacing: 12
+                Repeater {
+                    id: trayButtons
+                    model: details.trayItems
+                    delegate: AppTrayButton {
+                        required property var modelData
+                        objectName: "tray-app-"+modelData.id
+                        trayItem: modelData
+                        glass: glassContext;motionEnabled: details.motionEnabled
+                        active: details.active
+                    }
+                }
+            }
+        }
+    }
+  '';
+
   shellQml = pkgs.writeText "shell.qml" ''
     import Quickshell
+    import Quickshell.Services.SystemTray
     import Quickshell.Hyprland
     import Quickshell.Io
     import Quickshell.Wayland
@@ -5071,14 +5437,18 @@ let
                         model: [
                             {key: "media", label: "Media", icon: ""},
                             {key: "usage", label: "Usage", icon: ""},
-                            {key: "network", label: "Network", icon: "󰛳"}
+                            {key: "network", label: "Network", icon: "󰛳"},
+                            {key: "apps", label: "Apps", icon: ""}
                         ]
                         delegate: ModuleTile {
                             id: dummy
                             required property var modelData
                             required property int index
                             objectName: modelData.key + "Tile"
-                            readonly property real restX: clockTile.compactWidth + 8 + index * 66
+                            readonly property var previousTile: index>0 ? dummyTiles.itemAt(index-1) : null
+                            readonly property real baseX: previousTile
+                                ? previousTile.baseX + previousTile.compactWidth + 8 : clockTile.compactWidth + 8
+                            readonly property real restX: baseX
                                 - (modules.extractedIndex >= 0 && modules.extractedIndex < index + 1 ? modules.vacancy : 0)
                             readonly property real morphProgress: moduleDeck.displayed === modelData.key ? moduleDeck.progress : 0
                             parent: morphProgress > 0 ? modulePanel : modules
@@ -5102,7 +5472,7 @@ let
                             glassPosition: morphProgress > 0 ? Qt.point(modulePanel.x, modulePanel.y) : Qt.point(modules.x + x, modules.y)
                             glassOpacity: expandedState.progress
                             accessibleLabel: modelData.key === "media" ? audioService.description : "Open " + modelData.label
-                            outlineEnabled: modelData.key === "network"
+                            outlineEnabled: modelData.key === "network" || modelData.key === "apps"
                             clip: modelData.key !== "media" || morphProgress > 0
                             compactWidth: modelData.key === "media" ? 58 : Math.ceil(label.implicitWidth) + 20
                             motionEnabled: root.motionEnabled
@@ -5173,6 +5543,22 @@ let
                                 active: networkService.active && visible
                                 network: networkService
                                 usage: usageService
+                                motionEnabled: root.motionEnabled
+                            }
+
+                            AppsDetails {
+                                objectName: "appsDetails"
+                                width: 600; height: 420
+                                scale: clockWindow.detailsScale
+                                transformOrigin: Item.TopLeft
+                                glassSource: dummy.glassSource
+                                glassPosition: dummy.glassPosition
+                                opacity: moduleDeck.contentProgress
+                                visible: dummy.modelData.key === "apps" && dummy.morphProgress > 0 && opacity > 0
+                                enabled: visible && moduleDeck.interactive
+                                active: expandedState.open && visible
+                                window: windowService
+                                trayItems: dummy.modelData.key === "apps" ? SystemTray.items : []
                                 motionEnabled: root.motionEnabled
                             }
 
@@ -5317,6 +5703,9 @@ in {
   xdg.configFile."quickshell/WindowAudio.qml".source = windowAudioQml;
   xdg.configFile."quickshell/WindowMeter.qml".source = windowMeterQml;
   xdg.configFile."quickshell/WindowInfo.qml".source = windowInfoQml;
+  xdg.configFile."quickshell/AppWindowButton.qml".source = appWindowButtonQml;
+  xdg.configFile."quickshell/AppTrayButton.qml".source = appTrayButtonQml;
+  xdg.configFile."quickshell/AppsDetails.qml".source = appsDetailsQml;
   xdg.configFile."quickshell/shell.qml".source = shellQml;
   xdg.configFile."quickshell/ClockVisibility.qml".source = visibilityQml;
   xdg.configFile."quickshell/RollingClock.qml".source = rollingClockQml;
