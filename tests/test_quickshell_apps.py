@@ -106,10 +106,10 @@ class AppsActionsTests(QmlScenarioTests):
             const commands=[];state.dispatchRequested.connect(command=>commands.push(command));
             state.closeWindow("0xb");state.focusWindow("0xb");
             state.closeWindow("0xc");state.closeWindow("0xdead");state.closeWindow("0xa; quit");
-            check(commands.join("|")==="closewindow address:0xb|focuswindow address:0xb",
+            check(commands.join("|")==='hl.dsp.window.close({window="address:0xb"})|hl.dsp.focus({window="address:0xb"})',
                 "nonactive live windows can be focused/closed; stale, unmapped and malformed targets cannot");
             check(state.selectedAddress==="0xa","middle close does not silently change the active target");
-            state.closeWindow();check(commands[2]==="closewindow address:0xa","header close retains its original behavior");
+            state.closeWindow();check(commands[2]==='hl.dsp.window.close({window="address:0xa"})',"header close retains its original behavior");
         ''')
 
 

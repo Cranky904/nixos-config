@@ -1,4 +1,11 @@
-{ pkgs, ... }:
+{ lib, pkgs, ... }:
+let
+  lua = lib.generators.mkLuaInline;
+  bind = key: action: { _args = [ key (lua action) ]; };
+  exec = key: command: bind key "hl.dsp.exec_cmd(${builtins.toJSON command})";
+  workspaceKeys = (map (i: { key = toString (lib.mod i 10); workspace = i; }) (lib.range 1 10))
+    ++ (map (i: { key = "F${toString i}"; workspace = 20 + i; }) (lib.range 1 4));
+in
 
 {
   home.sessionVariables = {
@@ -19,134 +26,98 @@
 
   wayland.windowManager.hyprland.enable = true;
   wayland.windowManager.hyprland.package = pkgs.hyprland;
-  wayland.windowManager.hyprland.configType = "hyprlang";
+  # Hyprland 0.57 removed the legacy hyprland.conf parser.
+  wayland.windowManager.hyprland.configType = "lua";
   # Home Manager imports the session environment and starts graphical services.
   wayland.windowManager.hyprland.systemd.enable = true;
 
   wayland.windowManager.hyprland.settings = {
 
     monitor = [
-      "HDMI-A-1, 1920x1080@100, 0x0, 1"
-      "DP-2, 1920x1080@60, 1920x0, 1"
+      # Use the connected display's preferred mode (the current Samsung is 60 Hz).
+      { output = "HDMI-A-1"; mode = "preferred"; position = "0x0"; scale = 1; }
+      { output = "DP-2"; mode = "1920x1080@60"; position = "1920x0"; scale = 1; }
     ];
 
-    misc = {
-      disable_hyprland_logo = true;
-      disable_splash_rendering = true;
-      force_default_wallpaper = 0; # Set to 0 to disable the anime mascot
-    };
+    config = {
+      misc = {
+        disable_hyprland_logo = true;
+        disable_splash_rendering = true;
+        force_default_wallpaper = 0; # Set to 0 to disable the anime mascot
+      };
 
+      input = {
+        kb_layout = "hu";
+        follow_mouse = 1;
+        sensitivity = -0.167;
+        accel_profile = "flat";
+      };
 
-    input = {
-      kb_layout = "hu";
-      follow_mouse = 1;
-      sensitivity = -0.167;
-      accel_profile = "flat";
+      decoration = {
+        rounding = 16;
+      };
+
+      general = {
+        gaps_in = 2;
+        gaps_out = 2;
+        border_size = 1;
+
+        col.active_border = "rgba(a89984ff)";
+        col.inactive_border = "rgba(a89984aa)";
+        resize_on_border = false;
+        allow_tearing = false;
+        layout = "dwindle";
+      };
+
+      animations = {
+        enabled = true;
+      };
+
+      dwindle = {
+        preserve_split = true;
+      };
     };
 
     device = {
       name = "epic-mouse-v1";
       sensitivity = -0.5;
-      };
-
-    decoration = {
-      rounding = 16;
     };
 
-    general = {
-      gaps_in = 2;
-      gaps_out = 2;
-      border_size = 1;
-
-      "col.active_border" = "rgba(a89984ff)";
-      "col.inactive_border" = "rgba(a89984aa)";
-      resize_on_border = false;
-      allow_tearing = false;
-      layout = "dwindle";
-    };
-
-    "$mainMod" = "MOD1";
-    "$terminal" = "kitty";
-    "$applaunch" = "vicinae toggle";
-    "$browser" = "chromium";
-    "$fileManager" = "thunar";
-
-    animations = {
+    curve = [
+      { _args = [ "majesticBezier" { type = "bezier"; points = [ [ 0.15 0.9 ] [ 0.25 1.05 ] ]; } ]; }
+      { _args = [ "softFade" { type = "bezier"; points = [ [ 0.4 0 ] [ 0.2 1 ] ]; } ]; }
+    ];
+    animation = map (leaf: {
+      inherit leaf;
       enabled = true;
-      bezier = [
-        "majesticBezier, 0.15, 0.9, 0.25, 1.05"
-        "softFade, 0.4, 0, 0.2, 1"
-      ];
-      animation = [
-        "windows, 1, 3, majesticBezier"
-        "border, 1, 3, majesticBezier"
-        "fade, 1, 3, softFade"
-        "workspaces, 1, 3, majesticBezier"
-      ];
-    };
-
-    dwindle = {
-      preserve_split = true;
-    };
+      speed = 3;
+      bezier = if leaf == "fade" then "softFade" else "majesticBezier";
+    }) [ "windows" "border" "fade" "workspaces" ];
 
     bind = [
-      "CTRL ALT, T, exec, $terminal"
-      "$mainMod, D, exec, $applaunch"
-      "$mainMod, F, exec, $browser"
-      "$mainMod, Q, killactive"
-      "$mainMod, M, exit"
-      "$mainMod, E, exec, $fileManager"
-      "CTRL SHIFT, SPACE, togglefloating"
-      "$mainMod SHIFT, F, fullscreen"
-      "$mainMod, P, pseudo"
-
-      "CTRL $mainMod, left, movefocus, l"
-      "CTRL $mainMod, right, movefocus, r"
-      "CTRL $mainMod, up, movefocus, u"
-      "CTRL $mainMod, down, movefocus, d"
-
-      "$mainMod, 1, workspace, 1"
-      "$mainMod, 2, workspace, 2"
-      "$mainMod, 3, workspace, 3"
-      "$mainMod, 4, workspace, 4"
-      "$mainMod, 5, workspace, 5"
-      "$mainMod, 6, workspace, 6"
-      "$mainMod, 7, workspace, 7"
-      "$mainMod, 8, workspace, 8"
-      "$mainMod, 9, workspace, 9"
-      "$mainMod, 0, workspace, 10"
-      "$mainMod, F1, workspace, 21"
-      "$mainMod, F2, workspace, 22"
-      "$mainMod, F3, workspace, 23"
-      "$mainMod, F4, workspace, 24"
-
-      "$mainMod SHIFT, 1, movetoworkspace, 1"
-      "$mainMod SHIFT, 2, movetoworkspace, 2"
-      "$mainMod SHIFT, 3, movetoworkspace, 3"
-      "$mainMod SHIFT, 4, movetoworkspace, 4"
-      "$mainMod SHIFT, 5, movetoworkspace, 5"
-      "$mainMod SHIFT, 6, movetoworkspace, 6"
-      "$mainMod SHIFT, 7, movetoworkspace, 7"
-      "$mainMod SHIFT, 8, movetoworkspace, 8"
-      "$mainMod SHIFT, 9, movetoworkspace, 9"
-      "$mainMod SHIFT, 0, movetoworkspace, 10"
-      "$mainMod SHIFT, F1, movetoworkspace, 21"
-      "$mainMod SHIFT, F2, movetoworkspace, 22"
-      "$mainMod SHIFT, F3, movetoworkspace, 23"
-      "$mainMod SHIFT, F4, movetoworkspace, 24"
-
-      "$mainMod, mouse_down, workspace, e+1"
-      "$mainMod, mouse_up, workspace, e-1"
-
-      "$mainMod SHIFT, S, exec, grimblast --freeze copysave area ~/Pictures/$(date +%Y-%m-%d_%H-%m-%s).png"
-
-      "$mainMod, A, exec, kitty -e reca"
-    ];
-
-    bindm = [
-      "$mainMod, mouse:272, movewindow"
-      "$mainMod, mouse:273, resizewindow"
-    ];
+      (exec "CTRL + ALT + T" "kitty")
+      (exec "ALT + D" "vicinae toggle")
+      (exec "ALT + F" "chromium")
+      (exec "ALT + E" "thunar")
+      (bind "ALT + Q" "hl.dsp.window.close()")
+      (bind "ALT + M" "hl.dsp.exit()")
+      (bind "CTRL + SHIFT + SPACE" ''hl.dsp.window.float({ action = "toggle" })'')
+      (bind "ALT + SHIFT + F" "hl.dsp.window.fullscreen()")
+      (bind "ALT + P" "hl.dsp.window.pseudo()")
+      (bind "CTRL + ALT + left" ''hl.dsp.focus({ direction = "left" })'')
+      (bind "CTRL + ALT + right" ''hl.dsp.focus({ direction = "right" })'')
+      (bind "CTRL + ALT + up" ''hl.dsp.focus({ direction = "up" })'')
+      (bind "CTRL + ALT + down" ''hl.dsp.focus({ direction = "down" })'')
+      (bind "ALT + mouse_down" ''hl.dsp.focus({ workspace = "e+1" })'')
+      (bind "ALT + mouse_up" ''hl.dsp.focus({ workspace = "e-1" })'')
+      (exec "ALT + SHIFT + S" "grimblast --freeze copysave area ~/Pictures/$(date +%Y-%m-%d_%H-%m-%s).png")
+      (exec "ALT + A" "kitty -e reca")
+      { _args = [ "ALT + mouse:272" (lua "hl.dsp.window.drag()") { mouse = true; } ]; }
+      { _args = [ "ALT + mouse:273" (lua "hl.dsp.window.resize()") { mouse = true; } ]; }
+    ] ++ lib.concatMap ({ key, workspace }: [
+      (bind "ALT + ${key}" "hl.dsp.focus({ workspace = ${toString workspace} })")
+      (bind "ALT + SHIFT + ${key}" "hl.dsp.window.move({ workspace = ${toString workspace} })")
+    ]) workspaceKeys;
   };
 
   xdg.portal = {

@@ -164,7 +164,7 @@ class NetworkDetailsTests(QmlScenarioTests):
         function action(kind,target){}
         function copy(value,key){copied=key;}
         function manageNetworks(){}
-    }''').replace('required property var usage', 'property var usage:QtObject {property var state:({network:{rx:1024,tx:0}})}')
+    }''').replace('required property var usage', 'property var usage:QtObject {property var state:({network:{download:1024,upload:0}})}')
 
     def test_rate_changes_keep_existing_rolling_number_instances(self):
         self.run_scenario('''
@@ -172,7 +172,7 @@ class NetworkDetailsTests(QmlScenarioTests):
             state.motionEnabled=false;state.active=true;
             state.retainedDown=find(state,"networkDownload");
             check(!!state.retainedDown,"download value exists");
-            state.usage.state=({network:{rx:5120,tx:2048}});
+            state.usage.state=({network:{download:5120,upload:2048}});
         ''',later='''
             function find(item,name){if(item.objectName===name)return item;for(const child of item.children || []){const result=find(child,name);if(result)return result;}return null;}
             check(state.retainedDown===find(state,"networkDownload"),"telemetry updates preserve the number animator");

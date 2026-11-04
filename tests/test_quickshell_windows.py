@@ -127,7 +127,7 @@ class WindowServiceTests(QmlScenarioTests):
             const commands=[];state.dispatchRequested.connect(command=>commands.push(command));
             state.focusWindow("0xa");state.closeWindow();
             state.focusWindow("0xa; quit");state.focusWindow("0xb");
-            check(commands.join("|")==="focuswindow address:0xa|closewindow address:0xa","only live validated addresses dispatch");
+            check(commands.join("|")==='hl.dsp.focus({window="address:0xa"})|hl.dsp.window.close({window="address:0xa"})',"only live validated addresses dispatch");
             state.acceptState(JSON.stringify({key:state.current.key,pids:[11,12],births:{},cpu:2,ram:3,gpu:null}));
             check(state.pids.length===2,"current process descendants available for audio matching");
             state.acceptState(JSON.stringify({key:"old",pids:[99],births:{},cpu:80,ram:80,gpu:80}));

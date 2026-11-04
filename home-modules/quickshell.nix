@@ -1,6 +1,7 @@
-{ config ? {}, pkgs, ... }:
+{ config ? {}, lib ? pkgs.lib, pkgs, ... }:
 let
-  animationsEnabled = config.wayland.windowManager.hyprland.settings.animations.enabled or true;
+  animationsEnabled = config.wayland.windowManager.hyprland.settings.config.animations.enabled or true;
+  chromium = config.programs.chromium.finalPackage or pkgs.chromium;
 
   workspaceBadgeQml = pkgs.writeText "WorkspaceBadge.qml" ''
     import QtQuick
@@ -786,7 +787,7 @@ let
         }
 
         function select(module) {
-            if (!["clock", "media", "usage", "network", "apps"].includes(module))
+            if (!["clock", "media", "usage", "network", "apps", "ai"].includes(module))
                 return;
             selected = selected === module ? "" : module;
         }
@@ -1217,6 +1218,8 @@ let
 
     Item {
         id: calendar
+        property QtObject glass: null
+        property bool motionEnabled: true
         property date today: new Date()
         property int monthOffset: 0
         property date selectedDate: today
@@ -1225,6 +1228,7 @@ let
         readonly property int firstDay: (month.getDay() + 6) % 7
         readonly property int daysInMonth: new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate()
         readonly property string selectedLabel: Qt.formatDateTime(selectedDate, "dddd, d MMMM")
+        readonly property bool away: monthOffset !== 0 || !sameDay(selectedDate, today)
 
         function dateAt(index) {
             return new Date(month.getFullYear(), month.getMonth(), index - firstDay + 1);
@@ -1242,56 +1246,52 @@ let
 
         Text {
             id: heading
-            text: calendar.title
-            color: "#ffffff"
-            font.family: "0xProto Nerd Font Mono"
-            font.pixelSize: 16
             anchors.left: parent.left
-            anchors.top: parent.top
-            anchors.topMargin: 3
+            anchors.leftMargin: 4
+            anchors.verticalCenter: navigation.verticalCenter
+            width: parent.width - navigation.width - 12
+            text: calendar.title
+            color: "white"
+            font.family: "0xProto Nerd Font Mono"
+            font.pixelSize: 15
+            font.weight: Font.DemiBold
+            elide: Text.ElideRight
         }
 
         Row {
+            id: navigation
             anchors.right: parent.right
-            spacing: 3
-            Repeater {
-                model: ["‹", "›"]
-                delegate: AbstractButton {
-                    id: navigation
-                    HoverHandler { cursorShape: Qt.PointingHandCursor }
-                    required property int index
-                    required property string modelData
-                    width: 28; height: 28
-                    Accessible.name: index === 0 ? "Previous month" : "Next month"
-                    onClicked: calendar.monthOffset += index === 0 ? -1 : 1
-                    background: Rectangle {
-                        radius: 14
-                        color: navigation.hovered || navigation.visualFocus ? "#22ffffff" : "transparent"
-                    }
-                    contentItem: Text {
-                        text: navigation.modelData
-                        color: "#ffffff"
-                        font.pixelSize: 24
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                    }
-                }
+            spacing: 6
+            MediaButton {
+                objectName: "previousMonth"
+                width: 30; height: 30; iconSize: 11
+                glyph: ""; label: "Previous month"
+                glass: calendar.glass; motionEnabled: calendar.motionEnabled
+                onClicked: calendar.monthOffset -= 1
+            }
+            MediaButton {
+                objectName: "nextMonth"
+                width: 30; height: 30; iconSize: 11
+                glyph: ""; label: "Next month"
+                glass: calendar.glass; motionEnabled: calendar.motionEnabled
+                onClicked: calendar.monthOffset += 1
             }
         }
 
         Grid {
             id: weekdays
-            y: 46
+            y: 44
             columns: 7
             width: parent.width
             Repeater {
                 model: ["M", "T", "W", "T", "F", "S", "S"]
                 Text {
                     required property string modelData
+                    required property int index
                     width: weekdays.width / 7
-                    height: 22
+                    height: 20
                     text: modelData
-                    color: "#888888"
+                    color: index >= 5 ? "#666666" : "#888888"
                     font.family: "0xProto Nerd Font Mono"
                     font.pixelSize: 10
                     horizontalAlignment: Text.AlignHCenter
@@ -1301,7 +1301,7 @@ let
 
         Grid {
             id: days
-            y: 70
+            y: 64
             columns: 7
             width: parent.width
             Repeater {
@@ -1315,20 +1315,24 @@ let
                     readonly property bool isToday: calendar.sameDay(value, calendar.today)
                     readonly property bool chosen: calendar.sameDay(value, calendar.selectedDate)
                     width: days.width / 7
-                height: 28
+                    height: 26
+                    hoverEnabled: true
                     Accessible.name: Qt.formatDateTime(value, "dddd, d MMMM yyyy")
                     onClicked: calendar.selectedDate = value
                     background: Rectangle {
                         anchors.centerIn: parent
-                        width: 27; height: 27; radius: 13.5
+                        width: 25; height: 25; radius: 12.5
                         color: day.isToday ? "#ffffff"
-                            : day.chosen || day.hovered || day.visualFocus ? "#28ffffff" : "transparent"
+                            : day.chosen ? "#38ffffff"
+                            : day.hovered || day.visualFocus ? "#1cffffff" : "transparent"
+                        Behavior on color { ColorAnimation { duration: calendar.motionEnabled ? 140 : 0 } }
                     }
                     contentItem: Text {
                         text: day.value.getDate()
-                        color: day.isToday ? "#151515" : day.inMonth ? "#ffffff" : "#666666"
+                        color: day.isToday ? "#151515" : day.inMonth ? "#ffffff" : "#555555"
                         font.family: "0xProto Nerd Font Mono"
                         font.pixelSize: 11
+                        font.weight: day.isToday ? Font.DemiBold : Font.Normal
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
                     }
@@ -1338,21 +1342,37 @@ let
 
         AbstractButton {
             id: todayButton
-                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+            HoverHandler { cursorShape: Qt.PointingHandCursor }
             anchors.left: parent.left
             anchors.bottom: parent.bottom
             width: parent.width
-            height: 25
+            height: 22
+            hoverEnabled: true
             Accessible.name: "Return to today"
             onClicked: calendar.reset()
-            background: Rectangle { color: "transparent" }
-            contentItem: Text {
-                text: calendar.selectedLabel
-                color: todayButton.hovered || todayButton.visualFocus ? "#ffffff" : "#aaaaaa"
-                font.family: "0xProto Nerd Font Mono"
-                font.pixelSize: 10
-                verticalAlignment: Text.AlignVCenter
-                elide: Text.ElideRight
+            background: Item {}
+            contentItem: Item {
+                Text {
+                    x: 4
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: parent.width - todayHint.width - 12
+                    text: calendar.selectedLabel
+                    color: todayButton.hovered || todayButton.visualFocus ? "#ffffff" : "#aaaaaa"
+                    font.family: "0xProto Nerd Font Mono"
+                    font.pixelSize: 10
+                    elide: Text.ElideRight
+                }
+                Text {
+                    id: todayHint
+                    anchors.right: parent.right
+                    anchors.rightMargin: 4
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Today "
+                    visible: calendar.away
+                    color: todayButton.hovered || todayButton.visualFocus ? "#ffffff" : "#777777"
+                    font.family: "0xProto Nerd Font Mono"
+                    font.pixelSize: 9
+                }
             }
         }
     }
@@ -1680,93 +1700,123 @@ let
         id: details
         property date now: new Date()
         required property var weather
+        property Item glassSource: null
+        property point glassPosition: Qt.point(0, 0)
+        property bool active: true
+        property bool motionEnabled: true
         readonly property alias calendar: calendar
+        // Same 18-22% accent wash as the active-window card, keyed to the sky.
+        readonly property color weatherTint: {
+            const code = weather.code ?? 0, day = weather.daylight ?? true;
+            const accent = !weather.available ? [21, 21, 21]
+                : code <= 1 ? (day ? [232, 176, 79] : [111, 120, 216])
+                : code <= 3 ? [139, 155, 176]
+                : code <= 48 ? [154, 163, 171]
+                : code <= 67 || (code >= 80 && code <= 82) ? [79, 143, 224]
+                : code <= 86 ? [188, 216, 239] : [146, 102, 224];
+            const mix = 0.22, base = 21 / 255;
+            return Qt.rgba(base * (1 - mix) + accent[0] / 255 * mix,
+                base * (1 - mix) + accent[1] / 255 * mix,
+                base * (1 - mix) + accent[2] / 255 * mix, 0.75);
+        }
+        width: 600; height: 310
 
-        CalendarView {
-            id: calendar
-            x: 22; y: 22
-            width: 278; height: 266
-            today: details.now
+        function isoWeek(date) {
+            const thursday = new Date(date.getFullYear(), date.getMonth(), date.getDate() - (date.getDay() + 6) % 7 + 3);
+            const firstThursday = new Date(thursday.getFullYear(), 0, 4);
+            return 1 + Math.round(((thursday - firstThursday) / 86400000 - 3 + (firstThursday.getDay() + 6) % 7) / 7);
+        }
+        function dayOfYear(date) {
+            return Math.round((new Date(date.getFullYear(), date.getMonth(), date.getDate())
+                - new Date(date.getFullYear(), 0, 1)) / 86400000) + 1;
         }
 
-        Rectangle {
-            x: 318; y: 30
-            width: 1; height: 248
-            color: "#16ffffff"
+        QtObject {
+            id: glassContext
+            property Item source: details.glassSource
+            property Item root: details
+            property point origin: details.glassPosition
+            property real scale: details.scale
+            property int revision: 0
+            property var layout: [origin.x, origin.y, scale, details.width, details.height]
+            onLayoutChanged: Qt.callLater(() => { revision++; })
         }
 
-        Item {
-            x: 340; y: 22
-            width: 238; height: 266
-
-            Text {
-                anchors.top: parent.top
-                anchors.topMargin: 18
-                text: Qt.formatDateTime(details.now, "HH:mm:ss")
-                color: "#ffffff"
-                font.family: "0xProto Nerd Font Mono"
-                font.pixelSize: 33
+        FrostedSurface {
+            x: 20; y: 20
+            width: 300; height: 270; radius: 22
+            glass: glassContext; tint: "#bf222222"
+            CalendarView {
+                id: calendar
+                x: 14; y: 14
+                width: parent.width - 28; height: parent.height - 24
+                today: details.now
+                glass: glassContext
+                motionEnabled: details.motionEnabled
             }
+        }
 
-            Text {
-                y: 65
-                text: Qt.formatDateTime(details.now, "t")
-                color: "#888888"
-                font.family: "0xProto Nerd Font Mono"
-                font.pixelSize: 10
+        FrostedSurface {
+            id: timeCard
+            x: 332; y: 20
+            width: 248; height: 104; radius: 22
+            glass: glassContext; tint: "#bf222222"
+            RollingClock {
+                objectName: "clockDetailsTime"
+                x: 18; y: 14
+                width: implicitWidth; height: implicitHeight
+                clockMode: false; fontSize: 36
+                timeText: Qt.formatDateTime(details.now, "HH:mm:ss")
+                active: details.active && details.visible
+                motionEnabled: details.motionEnabled
             }
-
             Text {
-                y: 113
-                text: details.weather.city
+                x: 18; y: parent.height - height - 16
+                width: parent.width - zone.width - 44
+                text: "Week " + details.isoWeek(details.now) + "  ·  Day " + details.dayOfYear(details.now)
                 color: "#aaaaaa"
                 font.family: "0xProto Nerd Font Mono"
-                font.pixelSize: 11
-            }
-
-            Text {
-                y: 134
-                text: details.weather.temperatureText
-                color: "#ffffff"
-                font.family: "0xProto Nerd Font Mono"
-                font.pixelSize: 38
-            }
-
-            Text {
-                anchors.right: parent.right
-                anchors.rightMargin: 8
-                y: 141
-                text: details.weather.available ? details.weather.icon : ""
-                color: details.weather.available ? "#ffffff" : "#777777"
-                font.family: "0xProto Nerd Font Mono"
-                font.pixelSize: 31
-            }
-
-            Text {
-                y: 185
-                width: parent.width
-                text: details.weather.status
-                color: "#bbbbbb"
-                font.family: "0xProto Nerd Font Mono"
-                font.pixelSize: 11
+                font.pixelSize: 10
                 elide: Text.ElideRight
             }
-
             Text {
-                y: 208
-                text: details.weather.available
-                    ? "Feels " + Math.round(details.weather.feelsLike) + "°  ·  "
-                        + Math.round(details.weather.wind) + " km/h" : ""
-                color: "#888888"
+                id: zone
+                anchors.right: parent.right; anchors.rightMargin: 18
+                y: parent.height - height - 16
+                text: Qt.formatDateTime(details.now, "t")
+                color: "#777777"
                 font.family: "0xProto Nerd Font Mono"
                 font.pixelSize: 10
             }
+        }
 
+        FrostedSurface {
+            id: weatherCard
+            objectName: "weatherCard"
+            x: 332; y: 136
+            width: 248; height: 154; radius: 22
+            glass: glassContext
+            tintGradient: Gradient {
+                orientation: Gradient.Horizontal
+                GradientStop { position: 0; color: details.weatherTint }
+                GradientStop { position: 1; color: "#bf151515" }
+            }
+            Text {
+                x: 18; y: 17
+                width: parent.width - credit.width - 40
+                text: "  " + details.weather.city
+                color: "#aaaaaa"
+                font.family: "0xProto Nerd Font Mono"
+                font.pixelSize: 10
+                elide: Text.ElideRight
+            }
             AbstractButton {
                 id: credit
-                    HoverHandler { cursorShape: Qt.PointingHandCursor }
-                y: 240
-                width: parent.width; height: 26
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                anchors.right: parent.right; anchors.rightMargin: 12
+                y: 10
+                width: creditLabel.implicitWidth + 12; height: 24
+                hoverEnabled: true
                 Accessible.name: details.weather.available ? "Weather by Open-Meteo" : "Retry weather"
                 onClicked: {
                     if (details.weather.available)
@@ -1774,13 +1824,64 @@ let
                     else
                         details.weather.refresh();
                 }
-                background: Rectangle { color: "transparent" }
+                background: Item {}
                 contentItem: Text {
-                    text: details.weather.available ? "Open-Meteo ↗" : details.weather.loading ? "Open-Meteo" : "Retry ↻  ·  Open-Meteo"
+                    id: creditLabel
+                    text: details.weather.available ? "Open-Meteo ↗" : details.weather.loading ? "Open-Meteo" : "Retry ↻"
                     color: credit.hovered || credit.visualFocus ? "#ffffff" : "#777777"
                     font.family: "0xProto Nerd Font Mono"
                     font.pixelSize: 9
+                    horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
+                }
+            }
+            Text {
+                x: 16; y: 34
+                text: details.weather.temperatureText
+                color: "white"
+                font.family: "0xProto Nerd Font Mono"
+                font.pixelSize: 42
+            }
+            Text {
+                anchors.right: parent.right; anchors.rightMargin: 22
+                y: 42
+                text: details.weather.available ? details.weather.icon : ""
+                color: details.weather.available ? "#ffffff" : "#555555"
+                font.family: "0xProto Nerd Font Mono"
+                font.pixelSize: 36
+            }
+            Text {
+                x: 18; y: 92
+                width: parent.width - 36
+                text: details.weather.status
+                color: "#dddddd"
+                font.family: "0xProto Nerd Font Mono"
+                font.pixelSize: 11
+                elide: Text.ElideRight
+            }
+            Row {
+                x: 14; y: 116
+                spacing: 6
+                visible: details.weather.available
+                Repeater {
+                    model: [
+                        {glyph: "", text: "Feels " + Math.round(details.weather.feelsLike) + "°"},
+                        {glyph: "󰖝", text: Math.round(details.weather.wind) + " km/h"}
+                    ]
+                    delegate: FrostedSurface {
+                        id: chipSurface
+                        required property var modelData
+                        width: chip.implicitWidth + 20; height: 24; radius: 12
+                        glass: glassContext; tint: "#bf2a2a2a"
+                        Text {
+                            id: chip
+                            anchors.centerIn: parent
+                            text: chipSurface.modelData.glyph + " " + chipSurface.modelData.text
+                            color: "#cccccc"
+                            font.family: "0xProto Nerd Font Mono"
+                            font.pixelSize: 9
+                        }
+                    }
                 }
             }
         }
@@ -3342,6 +3443,7 @@ let
   usageDetailsQml = pkgs.writeText "UsageDetails.qml" ''
     import QtQuick
     import QtQuick.Controls
+    import Quickshell.Widgets
 
     Item {
         id:details
@@ -3350,15 +3452,23 @@ let
         property point glassPosition:Qt.point(0,0)
         property bool active:false
         property bool motionEnabled:true
+        property real phase:0
+        readonly property var down:rate(usage.state.network.download)
+        readonly property var up:rate(usage.state.network.upload)
         width:600;height:420
         function fixed(value,decimals) {return typeof value==="number"&&Number.isFinite(value)?value.toFixed(decimals):"—";}
         function gib(value) {return typeof value==="number"?fixed(value/1073741824,1):"—";}
+        function percent(value) {return typeof value==="number"&&Number.isFinite(value)?value:-1;}
         function rate(value) {
             if(typeof value!=="number"||!Number.isFinite(value))return {text:"—",unit:"KiB/s"};
             const units=["B/s","KiB/s","MiB/s","GiB/s"];
             let index=0;
             while(value>=1024&&index<3){value/=1024;index++;}
             return {text:value.toFixed(index===0?0:1),unit:units[index]};
+        }
+        NumberAnimation on phase {
+            from:0;to:Math.PI*2;duration:2600;loops:Animation.Infinite
+            running:details.active&&details.motionEnabled
         }
         QtObject {
             id:glassContext
@@ -3367,101 +3477,222 @@ let
             property point origin:details.glassPosition
             property real scale:details.scale
             property int revision:0
-            property var layout:[origin.x,origin.y,scale,details.width,details.height,cores.contentY]
+            property var layout:[origin.x,origin.y,scale,details.width,details.height]
             onLayoutChanged:Qt.callLater(()=>{revision++;})
         }
-        Item {
-            x:20;y:20;width:252;height:380
-            Text {text:"";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:24}
-            Text {x:34;y:6;text:"CPU";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:12}
-            Text {y:36;width:parent.width;text:details.usage.state.cpuName;color:"#999999";font.family:"0xProto Nerd Font Mono";font.pixelSize:10;elide:Text.ElideRight}
-            Text {y:67;text:"Usage";color:"#999999";font.family:"0xProto Nerd Font Mono";font.pixelSize:10}
+
+        // A frosted card whose reading rises from the bottom as a slow liquid
+        // wave, echoing the active-window meters.
+        component LiquidCard: FrostedSurface {
+            id:card
+            property string glyph:""
+            property string label:""
+            property string caption:""
+            property real value:-1
+            property color accent:"white"
+            readonly property real level:value<0?0:Math.max(0,Math.min(1,value/100))
+            property real shownLevel:level
+            Behavior on shownLevel {NumberAnimation{duration:details.motionEnabled?280:0;easing.type:Easing.OutCubic}}
+            width:176;height:196;radius:22
+            glass:glassContext;tint:"#bf222222"
+            Accessible.role:Accessible.ProgressBar
+            Accessible.name:label
+            Accessible.description:value<0?"Unavailable":Math.round(value)+"%"
+            Canvas {
+                id:liquid
+                anchors.fill:parent
+                function rgba(alpha) {
+                    return "rgba("+Math.round(card.accent.r*255)+","+Math.round(card.accent.g*255)+","+Math.round(card.accent.b*255)+","+alpha+")";
+                }
+                onPaint: {
+                    const ctx=getContext("2d");ctx.reset();
+                    if(card.value<0||card.shownLevel<=0)return;
+                    const baseline=height*(1-card.shownLevel);
+                    const amplitude=Math.min(4,1.5+card.shownLevel*3,baseline,height-baseline);
+                    const crest=x=>baseline+Math.sin(x/width*Math.PI*2-details.phase)*amplitude;
+                    const fill=ctx.createLinearGradient(0,baseline-amplitude,0,height);
+                    fill.addColorStop(0,rgba(0.26));fill.addColorStop(1,rgba(0.06));
+                    ctx.fillStyle=fill;ctx.beginPath();ctx.moveTo(0,height);
+                    for(let x=0;x<=width;x+=2)ctx.lineTo(x,crest(x));
+                    ctx.lineTo(width,height);ctx.closePath();ctx.fill();
+                    ctx.strokeStyle=rgba(0.75);ctx.lineWidth=1.5;ctx.beginPath();
+                    for(let x=0;x<=width;x+=2)x===0?ctx.moveTo(x,crest(x)):ctx.lineTo(x,crest(x));
+                    ctx.stroke();
+                }
+                onWidthChanged:requestPaint()
+                onHeightChanged:requestPaint()
+                Component.onCompleted:requestPaint()
+                Connections {target:details;function onPhaseChanged(){liquid.requestPaint();}}
+                Connections {target:card;function onShownLevelChanged(){liquid.requestPaint();}function onValueChanged(){liquid.requestPaint();}}
+            }
+            Text {x:16;y:15;text:card.glyph;color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:18}
+            Text {x:42;y:18;text:card.label;color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:12}
+            Text {
+                x:16;y:card.height-height-16;width:card.width-32
+                text:card.caption;color:"#aaaaaa"
+                font.family:"0xProto Nerd Font Mono";font.pixelSize:9;elide:Text.ElideRight
+            }
+        }
+
+        component Detail: Row {
+            property alias value:reading.text
+            property alias unit:reading.unit
+            property alias slots:reading.slots
+            property alias valueName:reading.objectName
+            property string suffix:""
+            spacing:5
             UsageValue {
-                objectName:"usageCpu"
-                y:84;text:details.fixed(details.usage.state.cpu,0);unit:"%";fontSize:38;slots:3
+                id:reading
+                fontSize:16;slots:3
                 active:details.active;motionEnabled:details.motionEnabled
             }
-            Text {x:146;y:67;text:"Temperature";color:"#999999";font.family:"0xProto Nerd Font Mono";font.pixelSize:10}
-            UsageValue {
-                objectName:"usageTemperature"
-                x:146;y:94;text:details.fixed(details.usage.state.temperature,0);unit:"°C";fontSize:26;slots:3
-                active:details.active;motionEnabled:details.motionEnabled
+            Text {
+                height:reading.height;verticalAlignment:Text.AlignBottom;bottomPadding:2
+                visible:text!=="";text:parent.suffix;color:"#888888"
+                font.family:"0xProto Nerd Font Mono";font.pixelSize:10
             }
-            Rectangle {y:155;width:parent.width;height:1;color:"#16ffffff"}
-            Text {y:177;text:"Cores";color:"#aaaaaa";font.family:"0xProto Nerd Font Mono";font.pixelSize:10}
-            GridView {
-                id:cores;objectName:"usageCores"
-                y:202;width:parent.width-12;height:parent.height-y
-                cellWidth:120;cellHeight:80;clip:true
-                model:details.usage.coresModel
-                delegate:Item {
-                    id:coreCell
-                    required property int index
-                    readonly property var core:details.usage.state.cores[index]??({})
-                    width:120;height:80
-                    FrostedSurface {
-                        x:0;y:0;width:110;height:68;radius:15.5
-                        glass:glassContext;tint:"#bf191919"
-                        Text {x:11;y:10;text:"Core "+((coreCell.core.id??0)+1);color:"#aaaaaa";font.family:"0xProto Nerd Font Mono";font.pixelSize:10}
-                        UsageValue {
-                            x:11;y:30;text:details.fixed(coreCell.core.percent,0);unit:"%";fontSize:20;slots:3
-                            active:details.active;motionEnabled:details.motionEnabled
+        }
+
+        Row {
+            x:20;y:20;spacing:16
+            LiquidCard {
+                objectName:"usageCpuCard"
+                glyph:"";label:"CPU";accent:"#ead178"
+                value:details.percent(details.usage.state.cpu)
+                caption:details.usage.state.cpuName||"Processor"
+                UsageValue {
+                    objectName:"usageCpu"
+                    x:16;y:54;text:details.fixed(details.usage.state.cpu,0);unit:"%";fontSize:38;slots:0
+                    active:details.active;motionEnabled:details.motionEnabled
+                }
+                Detail {
+                    x:16;y:112;valueName:"usageTemperature"
+                    value:details.fixed(details.usage.state.temperature,0);unit:"°C"
+                }
+            }
+            LiquidCard {
+                objectName:"usageRamCard"
+                glyph:"󰍛";label:"RAM";accent:"#9acb92"
+                value:details.percent(details.usage.state.ram.percent)
+                caption:"Memory in use"
+                UsageValue {
+                    objectName:"usageRamPercent"
+                    x:16;y:54;text:details.fixed(details.usage.state.ram.percent,0);unit:"%";fontSize:38;slots:0
+                    active:details.active;motionEnabled:details.motionEnabled
+                }
+                Detail {
+                    x:16;y:112;valueName:"usageRam"
+                    value:details.gib(details.usage.state.ram.used);unit:"GiB";slots:4
+                    suffix:"/ "+details.gib(details.usage.state.ram.total)
+                }
+            }
+            LiquidCard {
+                objectName:"usageGpuCard"
+                glyph:"󰢮";label:"GPU";accent:"#8fb5e8"
+                value:details.percent(details.usage.state.gpu.percent)
+                caption:(details.usage.state.gpu.name??"").replace("NVIDIA GeForce ","")||"Graphics"
+                UsageValue {
+                    objectName:"usageGpu"
+                    x:16;y:54;text:details.fixed(details.usage.state.gpu.percent,0);unit:"%";fontSize:38;slots:0
+                    active:details.active;motionEnabled:details.motionEnabled
+                }
+                Detail {
+                    x:16;y:112;valueName:"usageVram"
+                    value:details.gib(details.usage.state.gpu.used);unit:"GiB";slots:4
+                    suffix:"/ "+details.gib(details.usage.state.gpu.total)
+                }
+            }
+        }
+
+        FrostedSurface {
+            id:coresCard
+            x:20;y:232;width:352;height:168;radius:22
+            glass:glassContext;tint:"#bf222222"
+            Text {x:16;y:15;text:"Cores";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:12}
+            Text {
+                anchors.right:parent.right;anchors.rightMargin:16;y:16
+                text:cores.count?cores.count+" threads":"";color:"#888888"
+                font.family:"0xProto Nerd Font Mono";font.pixelSize:10
+            }
+            Row {
+                id:coreBars
+                objectName:"usageCores"
+                readonly property real gap:cores.count>16?3:6
+                readonly property bool labelled:cores.count<=16
+                x:16;y:44;width:parent.width-32;height:parent.height-y-14
+                spacing:gap
+                Repeater {
+                    id:cores
+                    model:details.usage.coresModel
+                    delegate:Item {
+                        id:coreCell
+                        required property int index
+                        readonly property var core:details.usage.state.cores[index]??({})
+                        readonly property real level:typeof core.percent==="number"?Math.max(0,Math.min(1,core.percent/100)):0
+                        width:cores.count?(coreBars.width-coreBars.gap*(cores.count-1))/cores.count:0
+                        height:coreBars.height
+                        Accessible.role:Accessible.ProgressBar
+                        Accessible.name:"Core "+((core.id??index)+1)
+                        Accessible.description:typeof core.percent==="number"?Math.round(core.percent)+"%":"Unavailable"
+                        // Clip a flat fill to the rounded track so 5% and 12% stay distinct.
+                        ClippingRectangle {
+                            id:track
+                            width:parent.width;height:parent.height-(coreBars.labelled?18:0)
+                            radius:Math.min(width/2,8);color:"#1affffff"
+                            Rectangle {
+                                anchors.bottom:parent.bottom
+                                width:parent.width;height:parent.height*coreCell.level
+                                color:"#ead178";opacity:0.85
+                                Behavior on height {NumberAnimation{duration:details.motionEnabled?280:0;easing.type:Easing.OutCubic}}
+                            }
+                        }
+                        Text {
+                            anchors.horizontalCenter:parent.horizontalCenter;anchors.bottom:parent.bottom
+                            visible:coreBars.labelled
+                            text:typeof coreCell.core.percent==="number"?Math.round(coreCell.core.percent):"—"
+                            color:"#aaaaaa";font.family:"0xProto Nerd Font Mono";font.pixelSize:9
                         }
                     }
                 }
-                ScrollBar.vertical:PlaylistScrollBar {
-                    parent:cores.parent
-                    anchors.top:cores.top;anchors.bottom:cores.bottom;anchors.left:cores.right;anchors.leftMargin:6
-                }
+            }
+            Text {
+                anchors.centerIn:parent;visible:cores.count===0
+                text:"Waiting for samples…";color:"#888888"
+                font.family:"0xProto Nerd Font Mono";font.pixelSize:10
             }
         }
-        Rectangle {x:281;y:28;width:1;height:364;color:"#16ffffff"}
-        Item {
-            x:292;y:20;width:288;height:380
-            Text {text:"󰍛";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:24}
-            Text {x:34;y:6;text:"RAM";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:12}
-            UsageValue {
-                objectName:"usageRam"
-                y:39;text:details.gib(details.usage.state.ram.used);unit:"GiB";fontSize:28;slots:4
-                active:details.active;motionEnabled:details.motionEnabled
+
+        FrostedSurface {
+            x:384;y:232;width:196;height:168;radius:22
+            glass:glassContext;tint:"#bf222222"
+            Text {x:16;y:15;text:"󰛳";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:18}
+            Text {x:42;y:18;text:"Network";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:12}
+            Repeater {
+                model:[{glyph:"",name:"usageDownload",label:"Download"},{glyph:"",name:"usageUpload",label:"Upload"}]
+                delegate:Item {
+                    required property int index
+                    required property var modelData
+                    readonly property var reading:index===0?details.down:details.up
+                    x:16;y:52+index*40;width:164;height:32
+                    Accessible.name:modelData.label
+                    Accessible.description:reading.text+" "+reading.unit
+                    Text {
+                        anchors.verticalCenter:parent.verticalCenter
+                        text:parent.modelData.glyph;color:"#aaaaaa"
+                        font.family:"0xProto Nerd Font Mono";font.pixelSize:13
+                    }
+                    UsageValue {
+                        objectName:parent.modelData.name
+                        x:24;anchors.verticalCenter:parent.verticalCenter
+                        text:parent.reading.text;unit:parent.reading.unit;fontSize:20;slots:5
+                        active:details.active;motionEnabled:details.motionEnabled
+                    }
+                }
             }
-            UsageValue {
-                x:207;y:45;text:details.fixed(details.usage.state.ram.percent,0);unit:"%";fontSize:22;slots:3
-                active:details.active;motionEnabled:details.motionEnabled
-            }
-            Text {y:82;text:"/ "+details.gib(details.usage.state.ram.total)+" GiB";color:"#999999";font.family:"0xProto Nerd Font Mono";font.pixelSize:10}
-            Rectangle {y:112;width:parent.width;height:1;color:"#16ffffff"}
-            Text {y:135;text:"󰢮";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:24}
-            Text {x:34;y:140;text:"GPU";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:12}
-            Text {x:73;y:141;width:parent.width-x;text:(details.usage.state.gpu.name??"").replace("NVIDIA GeForce ","");color:"#999999";font.family:"0xProto Nerd Font Mono";font.pixelSize:10;elide:Text.ElideRight}
-            Text {y:177;text:"Usage";color:"#999999";font.family:"0xProto Nerd Font Mono";font.pixelSize:10}
-            Text {x:126;y:177;text:"VRAM";color:"#999999";font.family:"0xProto Nerd Font Mono";font.pixelSize:10}
-            UsageValue {
-                objectName:"usageGpu"
-                y:195;text:details.fixed(details.usage.state.gpu.percent,0);unit:"%";fontSize:28;slots:3
-                active:details.active;motionEnabled:details.motionEnabled
-            }
-            UsageValue {
-                objectName:"usageVram"
-                x:126;y:195;text:details.gib(details.usage.state.gpu.used);unit:"GiB";fontSize:28;slots:4
-                active:details.active;motionEnabled:details.motionEnabled
-            }
-            Text {x:126;y:236;text:"/ "+details.gib(details.usage.state.gpu.total)+" GiB";color:"#999999";font.family:"0xProto Nerd Font Mono";font.pixelSize:10}
-            Rectangle {y:270;width:parent.width;height:1;color:"#16ffffff"}
-            Text {y:292;text:"󰛳";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:24}
-            Text {x:34;y:298;text:"Network";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:12}
-            Text {x:104;y:299;width:parent.width-x;text:(details.usage.state.network.interfaces??[]).join(", ");color:"#999999";font.family:"0xProto Nerd Font Mono";font.pixelSize:9;horizontalAlignment:Text.AlignRight;elide:Text.ElideRight}
-            Text {y:341;text:"";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:16}
-            UsageValue {
-                objectName:"usageDownload"
-                x:25;y:333;text:details.rate(details.usage.state.network.download).text;unit:details.rate(details.usage.state.network.download).unit;fontSize:21;slots:5
-                active:details.active;motionEnabled:details.motionEnabled
-            }
-            Text {x:147;y:341;text:"";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:16}
-            UsageValue {
-                objectName:"usageUpload"
-                x:172;y:333;text:details.rate(details.usage.state.network.upload).text;unit:details.rate(details.usage.state.network.upload).unit;fontSize:21;slots:5
-                active:details.active;motionEnabled:details.motionEnabled
+            Text {
+                x:16;y:parent.height-height-16;width:parent.width-32
+                text:(details.usage.state.network.interfaces??[]).join(", ")||"No interface"
+                color:"#aaaaaa";font.family:"0xProto Nerd Font Mono";font.pixelSize:9;elide:Text.ElideRight
             }
         }
     }
@@ -3753,11 +3984,15 @@ let
         property bool choosingExit: false
         readonly property var connection: network.state.network
         readonly property var tail: network.state.tailscale
-        readonly property var down: rate(usage.state.network.rx)
-        readonly property var up: rate(usage.state.network.tx)
+        // UsageBackend reports physical-interface throughput as download/upload.
+        readonly property var down: rate(usage.state.network.download)
+        readonly property var up: rate(usage.state.network.upload)
         readonly property var exits: [{key:"direct",name:"Direct connection",ip:"",online:true},
             ...(tail.peers || []).filter(peer=>peer.exitNode)]
         readonly property string exitName: (tail.peers || []).find(peer=>peer.ip===tail.exitNode && peer.ip)?.name || "Direct connection"
+        readonly property string tailStatus: network.busy ? "Updating…"
+            : ({Running:"Connected",Stopped:"Disconnected",NeedsLogin:"Sign in",NeedsMachineAuth:"Awaiting approval",
+                Starting:"Connecting…",Unavailable:"Unavailable",Loading:"Loading…"})[tail.status] || tail.status || "Unavailable"
         width:600;height:420
         function rate(value) {
             if(typeof value!=="number" || !Number.isFinite(value))return {text:"—",unit:"KiB/s"};
@@ -3788,32 +4023,25 @@ let
             property var layout:[origin.x,origin.y,scale,peers.contentY,exitChoices.contentY,exitPicker.y,exitPicker.height]
             onLayoutChanged:Qt.callLater(()=>{revision++;})
         }
-        Item {
-            x:20;y:20;width:252;height:380
-            Text {text:"󰛳";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:24}
-            Text {x:34;y:6;text:"Network";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:12}
-            Repeater {
-                model:[{glyph:"",label:"Download"},{glyph:"",label:"Upload"}]
-                delegate:Item {
-                    required property int index
-                    required property var modelData
-                    readonly property var rateData:index===0?details.down:details.up
-                    x:index*130;y:45;width:122;height:59
-                    Text {text:modelData.glyph;color:"#aaaaaa";font.family:"0xProto Nerd Font Mono";font.pixelSize:11}
-                    Text {x:19;text:modelData.label;color:"#aaaaaa";font.family:"0xProto Nerd Font Mono";font.pixelSize:10}
-                    UsageValue {objectName:index===0?"networkDownload":"networkUpload";y:20;text:rateData.text;unit:rateData.unit;fontSize:23;slots:4;active:details.active;motionEnabled:details.motionEnabled}
-                }
+
+        // Left column: the active connection, live throughput and the editor.
+        FrostedSurface {
+            x:20;y:20;width:252;height:212;radius:22;glass:glassContext;tint:"#bf222222"
+            Text {
+                x:16;y:14
+                text:details.connection.type==="wifi"?"󰖩":details.connection.name?"󰈀":"󰛳"
+                color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:22
             }
-            FrostedSurface {
-                y:121;width:parent.width;height:188;radius:22;glass:glassContext;tint:"#bf222222"
-                Text {x:14;y:15;width:parent.width-60;text:details.connection.name || "No connection";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:13;elide:Text.ElideRight}
-                Text {x:14;y:38;width:parent.width-28;text:[details.connection.state || "Loading",details.connection.interface].filter(Boolean).join(" · ");color:"#aaaaaa";font.family:"0xProto Nerd Font Mono";font.pixelSize:9;elide:Text.ElideRight}
-                MediaButton {
-                    objectName:"copyNetworkAddress";x:parent.width-44;y:11;width:30;height:30;iconSize:15
-                    glyph:details.network.copied==="local"?"":"";label:"Copy local address";glass:glassContext
-                    enabled:!!details.connection.address;motionEnabled:details.motionEnabled
-                    onClicked:details.network.copy(details.connection.address,"local")
-                }
+            Text {x:48;y:13;width:parent.width-x-50;text:details.connection.name || "No connection";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:13;elide:Text.ElideRight}
+            Text {x:48;y:33;width:parent.width-x-50;text:[details.connection.state || "Loading",details.connection.interface].filter(Boolean).join(" · ");color:"#aaaaaa";font.family:"0xProto Nerd Font Mono";font.pixelSize:9;elide:Text.ElideRight}
+            MediaButton {
+                objectName:"copyNetworkAddress";x:parent.width-44;y:12;width:30;height:30;iconSize:14
+                glyph:details.network.copied==="local"?"":"";label:"Copy local address";glass:glassContext
+                enabled:!!details.connection.address;motionEnabled:details.motionEnabled
+                onClicked:details.network.copy(details.connection.address,"local")
+            }
+            Rectangle {
+                x:10;y:58;width:parent.width-20;height:144;radius:16;color:"#12ffffff"
                 Repeater {
                     model:[{label:"IPv4",value:details.connection.address || "—"},
                         {label:"Gateway",value:details.connection.gateway || "—"},
@@ -3822,29 +4050,53 @@ let
                     delegate:Item {
                         required property int index
                         required property var modelData
-                        x:14;y:69+index*26;width:parent.width-28;height:20
-                        Text {text:modelData.label;color:"#999999";font.family:"0xProto Nerd Font Mono";font.pixelSize:10}
-                        Text {x:60;width:parent.width-x;text:modelData.value;color:"#dddddd";font.family:"0xProto Nerd Font Mono";font.pixelSize:10;horizontalAlignment:Text.AlignRight;elide:Text.ElideRight}
+                        x:14;y:8+index*32;width:parent.width-28;height:32
+                        Text {anchors.verticalCenter:parent.verticalCenter;text:parent.modelData.label;color:"#999999";font.family:"0xProto Nerd Font Mono";font.pixelSize:10}
+                        Text {x:64;anchors.verticalCenter:parent.verticalCenter;width:parent.width-x;text:parent.modelData.value;color:"#eeeeee";font.family:"0xProto Nerd Font Mono";font.pixelSize:10;horizontalAlignment:Text.AlignRight;elide:Text.ElideRight}
+                        Rectangle {y:parent.height-1;width:parent.width;height:1;color:"#0effffff";visible:parent.index<3}
                     }
                 }
             }
-            Text {y:321;width:parent.width;text:"Since boot    "+details.total(details.connection.received)+"   "+details.total(details.connection.sent);color:"#999999";font.family:"0xProto Nerd Font Mono";font.pixelSize:9;horizontalAlignment:Text.AlignHCenter}
-            MediaButton {
-                objectName:"manageNetworks";y:344;width:parent.width;height:38;glass:glassContext;label:"Manage networks";motionEnabled:details.motionEnabled
-                onClicked:details.network.manageNetworks()
-                contentItem:Item {
-                    Text {anchors.centerIn:parent;text:"󰒓  Manage networks";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:12}
+        }
+        Row {
+            x:20;y:244;spacing:12
+            Repeater {
+                model:[{glyph:"",label:"Download",name:"networkDownload"},{glyph:"",label:"Upload",name:"networkUpload"}]
+                delegate:FrostedSurface {
+                    id:rateCard
+                    required property int index
+                    required property var modelData
+                    readonly property var rateData:index===0?details.down:details.up
+                    width:120;height:92;radius:20;glass:glassContext;tint:"#bf222222"
+                    Accessible.name:modelData.label
+                    Text {x:14;y:13;text:rateCard.modelData.glyph+"  "+rateCard.modelData.label;color:"#aaaaaa";font.family:"0xProto Nerd Font Mono";font.pixelSize:10}
+                    UsageValue {objectName:rateCard.modelData.name;x:14;y:32;text:rateCard.rateData.text;unit:rateCard.rateData.unit;fontSize:22;slots:4;active:details.active;motionEnabled:details.motionEnabled}
+                    Text {
+                        x:14;y:parent.height-height-12;width:parent.width-28
+                        text:details.total(rateCard.index===0?details.connection.received:details.connection.sent)+" total"
+                        color:"#888888";font.family:"0xProto Nerd Font Mono";font.pixelSize:9;elide:Text.ElideRight
+                    }
                 }
             }
         }
-        Rectangle {x:281;y:28;width:1;height:364;color:"#16ffffff"}
+        MediaButton {
+            objectName:"manageNetworks";x:20;y:348;width:252;height:44;glass:glassContext;label:"Manage networks";motionEnabled:details.motionEnabled
+            onClicked:details.network.manageNetworks()
+            contentItem:Item {
+                Text {anchors.centerIn:parent;text:"󰒓  Manage networks";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:12}
+            }
+        }
+
+        // Right column: Tailscale, its peers and the exit node picker.
         Item {
-            id:tailscaleCard;x:296;y:20;width:284;height:380
+            id:tailscaleCard;x:292;y:20;width:288;height:380
             FrostedSurface {anchors.fill:parent;radius:24;glass:glassContext;tint:"#bf222222"}
-            Text {x:16;y:16;text:"";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:22}
-            Text {x:46;y:20;text:"Tailscale";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:13}
+            Text {x:16;y:15;text:"";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:20}
+            Text {x:46;y:12;text:"Tailscale";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:13}
+            Rectangle {x:47;y:36;width:6;height:6;radius:3;color:details.tail.running?"#9acb92":"#666666"}
+            Text {x:59;y:31;width:parent.width-x-60;text:details.tailStatus;color:"#aaaaaa";font.family:"0xProto Nerd Font Mono";font.pixelSize:9;elide:Text.ElideRight}
             MediaButton {
-                id:tailToggle;objectName:"toggleTailscale";x:parent.width-52;y:12;width:36;height:36;iconSize:20
+                id:tailToggle;objectName:"toggleTailscale";x:parent.width-52;y:12;width:36;height:36;iconSize:18
                 glass:glassContext;glyph:details.network.busy?"":"";selected:!!details.tail.running
                 label:details.tail.running?"Disconnect Tailscale":"Connect Tailscale"
                 enabled:!!details.tail.available && !details.network.busy;motionEnabled:details.motionEnabled
@@ -3854,47 +4106,50 @@ let
                 id:tailBody
                 width:parent.width;height:parent.height
                 opacity:1-exitPicker.progress;enabled:exitPicker.progress===0
-            Rectangle {x:17;y:60;width:5;height:5;radius:2.5;color:details.tail.running?"white":"#777777"}
-            Text {x:30;y:56;width:parent.width-46;text:details.network.busy?"Updating…":({Running:"Connected",Stopped:"Disconnected",NeedsLogin:"Sign in",NeedsMachineAuth:"Awaiting approval",Starting:"Connecting…",Unavailable:"Unavailable",Loading:"Loading…"})[details.tail.status] || details.tail.status || "Unavailable";color:"#aaaaaa";font.family:"0xProto Nerd Font Mono";font.pixelSize:10;elide:Text.ElideRight}
-            Text {x:16;y:80;width:parent.width-70;text:details.tail.name || "This device";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:12;elide:Text.ElideRight}
-            Text {x:16;y:100;text:details.tail.ip || "—";color:"#bbbbbb";font.family:"0xProto Nerd Font Mono";font.pixelSize:10}
-            MediaButton {
-                objectName:"copyTailscaleAddress";x:parent.width-48;y:82;width:30;height:30;iconSize:15
-                glass:glassContext;glyph:details.network.copied==="self"?"":"";label:"Copy Tailscale address"
-                enabled:!!details.tail.ip;motionEnabled:details.motionEnabled;onClicked:details.network.copy(details.tail.ip,"self")
-            }
-            Rectangle {x:16;y:126;width:parent.width-32;height:1;color:"#16ffffff"}
-            Text {x:16;y:141;text:"Devices";color:"#aaaaaa";font.family:"0xProto Nerd Font Mono";font.pixelSize:10}
-            Text {x:134;y:141;width:parent.width-x-16;text:(details.tail.peers || []).filter(p=>p.online).length+" online";color:"#888888";font.family:"0xProto Nerd Font Mono";font.pixelSize:10;horizontalAlignment:Text.AlignRight}
-            ListView {
-                id:peers;objectName:"tailscalePeers";x:14;y:166;width:parent.width-42;height:133;spacing:5;clip:true
-                model:details.network.peersModel
-                delegate:MediaButton {
-                    required property int index
-                    readonly property var peer:details.tail.peers[index] || ({})
-                    objectName:"tailPeer-"+(peer.key || "");width:peers.width;height:51;glass:glassContext
-                    label:"Copy "+peer.name+" address";motionEnabled:details.motionEnabled;enabled:!!peer.ip
-                    onClicked:details.network.copy(peer.ip,peer.key)
-                    contentItem:Item {
-                        Text {x:12;anchors.verticalCenter:parent.verticalCenter;text:details.network.copied===parent.parent.peer.key?"":details.osIcon(parent.parent.peer.os);color:parent.parent.peer.online?"white":"#777777";font.family:"0xProto Nerd Font Mono";font.pixelSize:20}
-                        Text {x:43;y:9;width:parent.width-x-12;text:parent.parent.peer.name || "";color:parent.parent.peer.online?"white":"#aaaaaa";font.family:"0xProto Nerd Font Mono";font.pixelSize:11;elide:Text.ElideRight}
-                        Text {x:43;y:29;width:parent.width-x-12;text:parent.parent.peer.online?parent.parent.peer.ip || "": "Offline";color:"#888888";font.family:"0xProto Nerd Font Mono";font.pixelSize:9;elide:Text.ElideRight}
+                Rectangle {
+                    x:12;y:60;width:parent.width-24;height:56;radius:16;color:"#12ffffff"
+                    Text {x:14;y:10;width:parent.width-x-50;text:details.tail.name || "This device";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:12;elide:Text.ElideRight}
+                    Text {x:14;y:30;text:details.tail.ip || "—";color:"#bbbbbb";font.family:"0xProto Nerd Font Mono";font.pixelSize:10}
+                    MediaButton {
+                        objectName:"copyTailscaleAddress";x:parent.width-42;y:13;width:30;height:30;iconSize:14
+                        glass:glassContext;glyph:details.network.copied==="self"?"":"";label:"Copy Tailscale address"
+                        enabled:!!details.tail.ip;motionEnabled:details.motionEnabled;onClicked:details.network.copy(details.tail.ip,"self")
                     }
                 }
-                ScrollBar.vertical:PlaylistScrollBar {parent:peers.parent;anchors.top:peers.top;anchors.bottom:peers.bottom;anchors.left:peers.right;anchors.leftMargin:6}
-            }
-            Text {x:16;y:195;width:parent.width-32;visible:peers.count===0;text:details.tail.running?"No other devices":"Not connected";color:"#888888";font.family:"0xProto Nerd Font Mono";font.pixelSize:11;horizontalAlignment:Text.AlignHCenter}
-            Text {x:16;y:308;text:"Exit node";color:"#999999";font.family:"0xProto Nerd Font Mono";font.pixelSize:9}
-            MediaButton {
-                objectName:"chooseExitNode";x:14;y:326;width:parent.width-28;height:38;glass:glassContext
-                label:"Choose exit node";motionEnabled:details.motionEnabled
-                visible:exitPicker.progress===0;enabled:!!details.tail.running && !details.network.busy
-                onClicked:details.choosingExit=true
-                contentItem:Item {
-                    Text {x:12;anchors.verticalCenter:parent.verticalCenter;width:parent.width-40;text:details.exitName;color:"white";opacity:parent.parent.enabled?1:0.4;font.family:"0xProto Nerd Font Mono";font.pixelSize:11;elide:Text.ElideRight}
-                    Text {anchors.right:parent.right;anchors.rightMargin:12;anchors.verticalCenter:parent.verticalCenter;text:"";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:13}
+                Text {x:16;y:130;text:"Devices";color:"#aaaaaa";font.family:"0xProto Nerd Font Mono";font.pixelSize:10}
+                Text {x:134;y:130;width:parent.width-x-16;text:(details.tail.peers || []).filter(p=>p.online).length+" online";color:"#888888";font.family:"0xProto Nerd Font Mono";font.pixelSize:10;horizontalAlignment:Text.AlignRight}
+                ListView {
+                    // Exactly three rows tall, so a scrolled list never cuts a peer in half.
+                    id:peers;objectName:"tailscalePeers";x:12;y:150;width:parent.width-36;height:146;spacing:4;clip:true
+                    model:details.network.peersModel
+                    delegate:MediaButton {
+                        id:peerButton
+                        required property int index
+                        readonly property var peer:details.tail.peers[index] || ({})
+                        objectName:"tailPeer-"+(peer.key || "");width:peers.width;height:46;glass:glassContext
+                        label:"Copy "+peer.name+" address";motionEnabled:details.motionEnabled;enabled:!!peer.ip
+                        onClicked:details.network.copy(peer.ip,peer.key)
+                        contentItem:Item {
+                            Text {x:14;anchors.verticalCenter:parent.verticalCenter;text:details.network.copied===peerButton.peer.key?"":details.osIcon(peerButton.peer.os);color:peerButton.peer.online?"white":"#666666";font.family:"0xProto Nerd Font Mono";font.pixelSize:18}
+                            Text {x:44;y:8;width:parent.width-x-28;text:peerButton.peer.name || "";color:peerButton.peer.online?"white":"#999999";font.family:"0xProto Nerd Font Mono";font.pixelSize:11;elide:Text.ElideRight}
+                            Text {x:44;y:25;width:parent.width-x-28;text:peerButton.peer.online?peerButton.peer.ip || "":"Offline";color:"#888888";font.family:"0xProto Nerd Font Mono";font.pixelSize:9;elide:Text.ElideRight}
+                            Rectangle {anchors.right:parent.right;anchors.rightMargin:16;anchors.verticalCenter:parent.verticalCenter;width:6;height:6;radius:3;color:peerButton.peer.online?"#9acb92":"#555555"}
+                        }
+                    }
+                    ScrollBar.vertical:PlaylistScrollBar {parent:peers.parent;anchors.top:peers.top;anchors.bottom:peers.bottom;anchors.left:peers.right;anchors.leftMargin:6}
                 }
-            }
+                Text {x:16;y:212;width:parent.width-32;visible:peers.count===0;text:details.tail.running?"No other devices":"Not connected";color:"#888888";font.family:"0xProto Nerd Font Mono";font.pixelSize:11;horizontalAlignment:Text.AlignHCenter}
+                Text {x:16;y:308;text:"Exit node";color:"#999999";font.family:"0xProto Nerd Font Mono";font.pixelSize:9}
+                MediaButton {
+                    objectName:"chooseExitNode";x:14;y:326;width:parent.width-28;height:38;glass:glassContext
+                    label:"Choose exit node";motionEnabled:details.motionEnabled
+                    visible:exitPicker.progress===0;enabled:!!details.tail.running && !details.network.busy
+                    onClicked:details.choosingExit=true
+                    contentItem:Item {
+                        Text {x:14;anchors.verticalCenter:parent.verticalCenter;width:parent.width-44;text:details.exitName;color:"white";opacity:parent.parent.enabled?1:0.4;font.family:"0xProto Nerd Font Mono";font.pixelSize:11;elide:Text.ElideRight}
+                        Text {anchors.right:parent.right;anchors.rightMargin:14;anchors.verticalCenter:parent.verticalCenter;text:"";color:"white";opacity:parent.parent.enabled?1:0.4;font.family:"0xProto Nerd Font Mono";font.pixelSize:13}
+                    }
+                }
             }
             MediaMorphPanel {
                 id:exitPicker;objectName:"exitNodePicker";x:14;y:326-(fullHeight-38)*progress
@@ -3902,19 +4157,21 @@ let
                 opened:details.choosingExit;motionEnabled:details.motionEnabled
                 Item {
                     anchors.fill:parent;opacity:exitPicker.progress;enabled:exitPicker.opened
-                    Text {x:14;y:16;text:"Exit node";color:"#aaaaaa";font.family:"0xProto Nerd Font Mono";font.pixelSize:12}
+                    Text {x:16;y:16;text:"Exit node";color:"#aaaaaa";font.family:"0xProto Nerd Font Mono";font.pixelSize:12}
                     ListView {
-                        id:exitChoices;objectName:"exitNodeChoices";x:8;y:44;width:parent.width-32;height:parent.height-y-12;spacing:5;clip:true
+                        id:exitChoices;objectName:"exitNodeChoices";x:8;y:44;width:parent.width-32;height:parent.height-y-12;spacing:4;clip:true
                         model:details.network.exitsModel
                         delegate:MediaButton {
+                            id:exitButton
                             required property int index
                             readonly property var modelData:details.exits[index] || ({})
-                            width:exitChoices.width;height:48;glass:glassContext
+                            width:exitChoices.width;height:46;glass:glassContext
                             label:"Use "+modelData.name;selected:(modelData.ip || "")===(details.tail.exitNode || "")
                             motionEnabled:details.motionEnabled;enabled:modelData.online && !details.network.busy
                             onClicked:{details.choosingExit=false;details.network.action("exit",modelData.ip);}
                             contentItem:Item {
-                                Text {x:12;anchors.verticalCenter:parent.verticalCenter;width:parent.width-24;text:parent.parent.modelData.name;color:parent.parent.enabled?"white":"#777777";font.family:"0xProto Nerd Font Mono";font.pixelSize:11;elide:Text.ElideRight}
+                                Text {x:14;anchors.verticalCenter:parent.verticalCenter;width:parent.width-48;text:exitButton.modelData.name;color:exitButton.enabled?"white":"#777777";font.family:"0xProto Nerd Font Mono";font.pixelSize:11;elide:Text.ElideRight}
+                                Text {anchors.right:parent.right;anchors.rightMargin:14;anchors.verticalCenter:parent.verticalCenter;visible:exitButton.selected;text:"";color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:12}
                             }
                         }
                         ScrollBar.vertical:PlaylistScrollBar {parent:exitChoices.parent;anchors.top:exitChoices.top;anchors.bottom:exitChoices.bottom;anchors.left:exitChoices.right;anchors.leftMargin:6}
@@ -4324,11 +4581,11 @@ let
         }
         function focusWindow(address) {
             if (addressValid(address) && windows.some(w => w.address === address))
-                dispatchRequested("focuswindow address:"+address);
+                dispatchRequested('hl.dsp.focus({window="address:'+address+'"})');
         }
         function closeWindow(address = selectedAddress) {
             if (addressValid(address) && windows.some(w => w.address === address))
-                dispatchRequested("closewindow address:"+address);
+                dispatchRequested('hl.dsp.window.close({window="address:'+address+'"})');
         }
         onClientsChanged: Qt.callLater(refresh)
         onFocusedChanged: Qt.callLater(refresh)
@@ -4646,7 +4903,7 @@ let
             : (windowData.workspaceName || "").replace(/^special:/, "") || "S"
         signal closeRequested()
         implicitWidth: compact ? 66 : 224
-        implicitHeight: compact ? 66 : 112
+        implicitHeight: compact ? 66 : 96
         padding: 0
         hoverEnabled: true
         Accessible.name: (windowData.appName || windowData.className) + ", " + windowData.title
@@ -4757,12 +5014,23 @@ let
                     }
                 }
             }
-            Text {
-                x: 94;y: (parent.height-height)/2;width: parent.width-x-14
+            Column {
+                x: 92;anchors.verticalCenter: parent.verticalCenter;width: parent.width-x-16
                 visible: !button.compact
-                text: button.windowData.appName || button.windowData.className
-                color: "white";font.family: "0xProto Nerd Font Mono";font.pixelSize: 12
-                wrapMode: Text.Wrap;maximumLineCount: 2;elide: Text.ElideRight
+                spacing: 4
+                Text {
+                    width: parent.width
+                    text: button.windowData.appName || button.windowData.className
+                    color: "white";font.family: "0xProto Nerd Font Mono";font.pixelSize: 12
+                    elide: Text.ElideRight
+                }
+                Text {
+                    width: parent.width
+                    visible: text !== ""
+                    text: button.windowData.title || ""
+                    color: "#aaaaaa";font.family: "0xProto Nerd Font Mono";font.pixelSize: 9
+                    wrapMode: Text.Wrap;maximumLineCount: 2;elide: Text.ElideRight
+                }
             }
         }
         // The normal button retains left-click and keyboard activation. Only
@@ -4859,6 +5127,7 @@ let
         property bool motionEnabled: true
         readonly property alias windowsModel: windowRows
         readonly property int trayCount: trayButtons.count
+        readonly property bool hasTray: trayCount>0
         width: 600;height: 420
 
         // Update roles in place: focus, titles and icon refreshes must not reset
@@ -4900,13 +5169,15 @@ let
             property point origin: details.glassPosition
             property real scale: details.scale
             property int revision: 0
-            property var layout: [origin.x,origin.y,scale,apps.contentY,trayApps.contentY]
+            property var layout: [origin.x,origin.y,scale,apps.contentY,trayApps.contentY,apps.width]
             onLayoutChanged: Qt.callLater(()=>{revision++;})
         }
         Flickable {
             id: apps
             objectName: "windowApps"
-            x: 20;y: 20;width: 472;height: 380
+            x: 20;y: 20
+            // Without tray registrations the window grid takes the whole panel.
+            width: details.hasTray ? 456 : 566;height: 380
             contentWidth: width
             contentHeight: appsGrid.implicitHeight
             boundsBehavior: Flickable.StopAtBounds
@@ -4921,6 +5192,7 @@ let
                     delegate: AppWindowButton {
                         required property var model
                         objectName: "app-"+model.address
+                        width: (appsGrid.width-appsGrid.spacing)/2
                         windowData: model
                         iconSource: details.window.icons[model.key] || ""
                         selected: details.window.selectedAddress===model.address
@@ -4931,21 +5203,35 @@ let
                 }
             }
         }
-        Text {
-            x: 32;y: (parent.height-height)/2;width: 436
+        FrostedSurface {
+            x: 20;y: 20;width: details.hasTray ? 456 : 560;height: 380;radius: 24
             visible: windowRows.count===0
-            text: "No open windows"
-            color: "#aaaaaa";font.family: "0xProto Nerd Font Mono";font.pixelSize: 12
-            horizontalAlignment: Text.AlignHCenter
+            glass: glassContext;tint: "#bf222222"
+            Column {
+                anchors.centerIn: parent;spacing: 10
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: "";color: "#777777"
+                    font.family: "0xProto Nerd Font Mono";font.pixelSize: 34
+                }
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: "No open windows"
+                    color: "#aaaaaa";font.family: "0xProto Nerd Font Mono";font.pixelSize: 12
+                }
+            }
         }
-        Rectangle {
-            x: 501;y: 28;width: 1;height: 364
-            color: "#16ffffff";visible: details.trayCount>0
+        FrostedSurface {
+            id: trayCard
+            x: 488;y: 20;width: 92;height: 380;radius: 24
+            visible: details.hasTray
+            glass: glassContext;tint: "#bf222222"
         }
         Flickable {
             id: trayApps
             objectName: "trayApps"
-            x: 514;y: 20;width: 76;height: 380
+            x: trayCard.x+13;y: trayCard.y+13;width: 76;height: trayCard.height-26
+            visible: details.hasTray
             contentWidth: width
             contentHeight: trayColumn.implicitHeight
             boundsBehavior: Flickable.StopAtBounds
@@ -4953,7 +5239,7 @@ let
             ScrollBar.vertical: PlaylistScrollBar {width:6}
             Column {
                 id: trayColumn
-                width: trayApps.width-10;spacing: 12
+                width: trayApps.width-10;spacing: 10
                 Repeater {
                     id: trayButtons
                     model: details.trayItems
@@ -4965,6 +5251,860 @@ let
                         active: details.active
                     }
                 }
+            }
+        }
+    }
+  '';
+
+  aiBackendPython = pkgs.writeText "AiBackend.py" ''
+    """AI usage limits and the T3 Code server for the Quickshell AI panel.
+
+    Without --action, print one JSON state line and exit. Claude limits come from
+    the same OAuth usage endpoint Claude Code's /usage uses; Codex limits are read
+    from the rate-limit snapshots Codex writes into its local session logs. The
+    Claude OAuth token is only ever sent to api.anthropic.com and is never
+    refreshed or rewritten here.
+    """
+    import argparse
+    import datetime
+    import json
+    import os
+    from pathlib import Path
+    import re
+    import shutil
+    import signal
+    import subprocess
+    import sys
+    import time
+    import urllib.error
+    import urllib.request
+
+    UNIT = 'quickshell-t3code'
+    CLAUDE_URL = 'https://api.anthropic.com/api/oauth/usage'
+    CLAUDE_CACHE_SECONDS = 120
+    CODEX_TAIL_BYTES = 4 * 1024 * 1024
+
+
+    def home():
+        return Path(os.environ.get('HOME') or Path.home())
+
+
+    def expand(value, default):
+        value = (value or ''').strip()
+        if not value:
+            return default
+        if value == '~':
+            return home()
+        if value.startswith('~/'):
+            return home() / value[2:]
+        return Path(value).resolve()
+
+
+    def cache_path():
+        runtime = os.environ.get('XDG_RUNTIME_DIR') or '/tmp'
+        return Path(runtime) / 'quickshell-ai-claude.json'
+
+
+    def iso_ms(value):
+        if not isinstance(value, str) or not value:
+            return None
+        try:
+            return int(datetime.datetime.fromisoformat(value.replace('Z', '+00:00')).timestamp() * 1000)
+        except ValueError:
+            return None
+
+
+    def bounded(value):
+        if not isinstance(value, (int, float)) or value != value:
+            return None
+        return max(0.0, min(100.0, float(value)))
+
+
+    def window(label, used, resets_at, now_ms):
+        """One limit window, reported as the share still remaining (100 = untouched)."""
+        # A window whose reset time has already passed has rolled over to full.
+        if resets_at is not None and resets_at <= now_ms:
+            return {'label': label, 'remaining': 100.0, 'resetsAt': None}
+        used = bounded(used)
+        return {'label': label, 'remaining': None if used is None else 100.0 - used, 'resetsAt': resets_at}
+
+
+    def installed(name, extra=()):
+        path = os.environ.get('PATH', ''')
+        candidates = [path, str(home() / '.nix-profile/bin'), '/etc/profiles/per-user/'
+            + os.environ.get('USER', ''') + '/bin', '/run/current-system/sw/bin', str(home() / '.local/bin'), *extra]
+        return shutil.which(name, path=os.pathsep.join(c for c in candidates if c)) is not None
+
+
+    # --- Claude -----------------------------------------------------------------
+
+    def claude_usage(payload, now_ms):
+        windows = []
+        for key, label in (('five_hour', '5-hour'), ('seven_day', 'Weekly')):
+            entry = payload.get(key)
+            if isinstance(entry, dict):
+                windows.append(window(label, entry.get('utilization'), iso_ms(entry.get('resets_at')), now_ms))
+        return windows
+
+
+    def claude_state(now, fetch=None, credentials=None, cache=None):
+        """Return the Claude provider entry, using a short cache to spare the API."""
+        config = expand(os.environ.get('CLAUDE_CONFIG_DIR'), home() / '.claude')
+        credentials = credentials or config / '.credentials.json'
+        cache = cache or cache_path()
+        entry = {'id': 'claude', 'name': 'Claude', 'plan': ''', 'windows': [], 'error': ''', 'updatedAt': None}
+        try:
+            oauth = json.loads(Path(credentials).read_text()).get('claudeAiOauth') or {}
+        except (OSError, ValueError):
+            entry['error'] = 'Sign in to Claude Code'
+            return entry
+        entry['plan'] = str(oauth.get('subscriptionType') or ''').capitalize()
+        token = oauth.get('accessToken')
+        if not token:
+            entry['error'] = 'Sign in to Claude Code'
+            return entry
+        cached = None
+        try:
+            cached = json.loads(Path(cache).read_text())
+        except (OSError, ValueError):
+            pass
+        now_ms = int(now * 1000)
+        if cached and isinstance(cached.get('payload'), dict) and now - cached.get('fetched', 0) < CLAUDE_CACHE_SECONDS:
+            entry['windows'] = claude_usage(cached['payload'], now_ms)
+            entry['updatedAt'] = int(cached['fetched'] * 1000)
+            return entry
+        expires = oauth.get('expiresAt')
+        if isinstance(expires, (int, float)) and expires <= now_ms:
+            entry['error'] = 'Open Claude Code to refresh sign-in'
+        else:
+            try:
+                payload = (fetch or fetch_claude)(token)
+                if not isinstance(payload, dict):
+                    raise ValueError('unexpected response')
+                Path(cache).write_text(json.dumps({'fetched': now, 'payload': payload}))
+                os.chmod(cache, 0o600)
+                entry['windows'] = claude_usage(payload, now_ms)
+                entry['updatedAt'] = now_ms
+                return entry
+            except urllib.error.HTTPError as error:
+                entry['error'] = 'Open Claude Code to refresh sign-in' if error.code in (401, 403) \
+                    else 'Usage is rate limited' if error.code == 429 else 'Usage unavailable'
+            except (OSError, ValueError):
+                entry['error'] = 'Usage unavailable'
+        # Keep showing the last known numbers next to the error.
+        if cached and isinstance(cached.get('payload'), dict):
+            entry['windows'] = claude_usage(cached['payload'], now_ms)
+            entry['updatedAt'] = int(cached.get('fetched', 0) * 1000)
+        return entry
+
+
+    def fetch_claude(token):
+        request = urllib.request.Request(CLAUDE_URL, headers={
+            'Authorization': 'Bearer ' + token,
+            'anthropic-beta': 'oauth-2025-04-20',
+            'Content-Type': 'application/json',
+            'User-Agent': 'quickshell-ai-panel',
+        })
+        with urllib.request.urlopen(request, timeout=8) as response:
+            return json.loads(response.read().decode())
+
+
+    # --- Codex ------------------------------------------------------------------
+
+    def codex_snapshot(path):
+        """Newest rate-limit snapshot in one rollout file, or None."""
+        try:
+            with open(path, 'rb') as handle:
+                handle.seek(0, os.SEEK_END)
+                size = handle.tell()
+                handle.seek(max(0, size - CODEX_TAIL_BYTES))
+                data = handle.read()
+        except OSError:
+            return None
+        for line in reversed(data.split(b'\n')):
+            if b'"rate_limits"' not in line:
+                continue
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            limits = (event.get('payload') or {}).get('rate_limits')
+            if isinstance(limits, dict) and (limits.get('primary') or limits.get('secondary')):
+                return {'limits': limits, 'timestamp': iso_ms(event.get('timestamp'))}
+        return None
+
+
+    def codex_state(now, root=None, scan=12):
+        root = Path(root or expand(os.environ.get('CODEX_HOME'), home() / '.codex')) / 'sessions'
+        entry = {'id': 'codex', 'name': 'Codex', 'plan': ''', 'windows': [], 'error': ''', 'updatedAt': None}
+        try:
+            files = sorted(root.rglob('rollout-*.jsonl'), key=lambda p: p.stat().st_mtime, reverse=True)
+        except OSError:
+            files = []
+        snapshot = None
+        for path in files[:scan]:
+            snapshot = codex_snapshot(path)
+            if snapshot:
+                break
+        if not snapshot:
+            entry['error'] = 'Run Codex once to load limits'
+            return entry
+        limits, now_ms = snapshot['limits'], int(now * 1000)
+        entry['plan'] = str(limits.get('plan_type') or ''').capitalize()
+        entry['updatedAt'] = snapshot['timestamp']
+        found = []
+        for key in ('primary', 'secondary'):
+            value = limits.get(key)
+            if not isinstance(value, dict):
+                continue
+            minutes = value.get('window_minutes') or 0
+            label = '5-hour' if minutes and minutes <= 360 else 'Weekly' if minutes >= 7 * 1440 - 60 else \
+                (str(round(minutes / 60)) + '-hour' if minutes < 1440 else str(round(minutes / 1440)) + '-day')
+            resets = value.get('resets_at')
+            found.append((minutes, window(label, value.get('used_percent'),
+                int(resets * 1000) if isinstance(resets, (int, float)) else None, now_ms)))
+        entry['windows'] = [item for _, item in sorted(found, key=lambda pair: pair[0])]
+        return entry
+
+
+    # --- T3 Code ----------------------------------------------------------------
+
+    def t3_home():
+        return expand(os.environ.get('T3CODE_HOME'), home() / '.t3')
+
+
+    def pid_alive(pid):
+        if not isinstance(pid, int) or pid <= 0:
+            return False
+        try:
+            os.kill(pid, 0)
+            return True
+        except PermissionError:
+            return True
+        except OSError:
+            return False
+
+
+    def t3_runtime(base=None):
+        try:
+            runtime = json.loads((Path(base or t3_home()) / 'userdata' / 'server-runtime.json').read_text())
+        except (OSError, ValueError):
+            return None
+        if not isinstance(runtime, dict) or not pid_alive(runtime.get('pid')):
+            return None
+        return runtime
+
+
+    def unit_state(systemctl):
+        try:
+            result = subprocess.run([systemctl, '--user', 'is-active', UNIT + '.service'],
+                capture_output=True, text=True, timeout=5)
+            return result.stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            return 'unknown'
+
+
+    def t3_state(systemctl, base=None):
+        runtime = t3_runtime(base)
+        unit = unit_state(systemctl)
+        if runtime:
+            return {'state': 'running', 'origin': runtime.get('origin') or ''', 'port': runtime.get('port'),
+                'version': runtime.get('serverVersion') or ''', 'managed': unit == 'active'}
+        if unit in ('active', 'activating', 'reloading'):
+            return {'state': 'starting', 'origin': ''', 'port': None, 'version': ''', 'managed': True}
+        return {'state': 'stopped', 'origin': ''', 'port': None, 'version': ''', 'managed': False}
+
+
+    def t3_command(args, runtime=None):
+        """Prefer the exact runtime binary the live server uses; otherwise npx."""
+        version = (runtime or {}).get('serverVersion')
+        if version and re.fullmatch(r'[0-9A-Za-z.+-]+', version):
+            binary = t3_home() / 'runtime' / 'versions' / version / 't3'
+            if os.access(binary, os.X_OK):
+                return [str(binary)]
+        return [args.steam_run, args.npx, '--yes', 't3@nightly']
+
+
+    def reachable(origin):
+        try:
+            with urllib.request.urlopen(origin, timeout=2):
+                return True
+        except urllib.error.HTTPError:
+            return True
+        except (OSError, ValueError):
+            return False
+
+
+    def pair(args, runtime):
+        result = subprocess.run([*t3_command(args, runtime), 'pair', '--ttl', '5m', '--label', 'Quickshell'],
+            capture_output=True, text=True, timeout=120, cwd=str(home()))
+        match = re.search(r'Pairing URL:\s*(https?://\S+)', result.stdout)
+        if not match:
+            raise RuntimeError('T3 did not return a pairing link')
+        return match.group(1)
+
+
+    def start(args):
+        if not t3_runtime():
+            if unit_state(args.systemctl) not in ('active', 'activating'):
+                path = os.path.dirname(args.npx) + os.pathsep + os.environ.get('PATH', ''')
+                subprocess.run([args.systemd_run, '--user', '--unit', UNIT, '--collect', '--quiet',
+                    '--description', 'T3 Code server (Quickshell)', '--working-directory', str(home()),
+                    '--setenv', 'PATH=' + path, args.steam_run, args.npx, '--yes', 't3@nightly', 'serve'],
+                    check=True, capture_output=True, timeout=20)
+            deadline = time.monotonic() + args.timeout
+            while time.monotonic() < deadline:
+                runtime = t3_runtime()
+                if runtime and reachable(runtime.get('origin') or '''):
+                    break
+                if unit_state(args.systemctl) in ('failed', 'inactive') and not t3_runtime():
+                    raise RuntimeError('T3 stopped while starting (journalctl --user -u ' + UNIT + ')')
+                time.sleep(0.5)
+            else:
+                raise RuntimeError('T3 did not start in time')
+        return open_url(args)
+
+
+    def open_url(args):
+        runtime = t3_runtime()
+        if not runtime:
+            raise RuntimeError('T3 is not running')
+        try:
+            return pair(args, runtime)
+        except (OSError, subprocess.SubprocessError, RuntimeError):
+            # A browser that already paired keeps its session; the origin still works.
+            if runtime.get('origin'):
+                return runtime['origin']
+            raise
+
+
+    def stop(args):
+        if unit_state(args.systemctl) in ('active', 'activating'):
+            subprocess.run([args.systemctl, '--user', 'stop', UNIT + '.service'], capture_output=True, timeout=30)
+        runtime = t3_runtime()
+        if runtime:
+            pid = runtime['pid']
+            try:
+                command = Path('/proc/' + str(pid) + '/cmdline').read_bytes().split(b'\0')
+            except OSError:
+                command = []
+            # Only signal an actual `t3 serve` process, never an unrelated reused pid.
+            if any(part.endswith(b't3') or part.endswith(b't3.mjs') for part in command) and b'serve' in command:
+                os.kill(pid, signal.SIGTERM)
+                deadline = time.monotonic() + 15
+                while pid_alive(pid) and time.monotonic() < deadline:
+                    time.sleep(0.25)
+                if pid_alive(pid):
+                    os.kill(pid, signal.SIGKILL)
+            else:
+                raise RuntimeError('Refusing to stop an unrecognised process')
+        return '''
+
+
+    def main():
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--systemctl', default='systemctl')
+        parser.add_argument('--systemd-run', default='systemd-run')
+        parser.add_argument('--steam-run', default='steam-run')
+        parser.add_argument('--npx', default='npx')
+        parser.add_argument('--timeout', type=float, default=180)
+        parser.add_argument('--action', choices=('start', 'stop', 'open'))
+        args = parser.parse_args()
+        if args.action:
+            try:
+                url = {'start': start, 'stop': stop, 'open': open_url}[args.action](args)
+                print(json.dumps({'ok': True, 'url': url, 'error': '''}), flush=True)
+            except (OSError, subprocess.SubprocessError, RuntimeError) as error:
+                message = str(error) if isinstance(error, RuntimeError) else 'Could not ' + args.action + ' T3'
+                print(json.dumps({'ok': False, 'url': ''', 'error': message}), flush=True)
+            return
+        now = time.time()
+        providers = []
+        if installed('claude'):
+            providers.append(claude_state(now))
+        if installed('codex'):
+            providers.append(codex_state(now))
+        print(json.dumps({'providers': providers, 't3': t3_state(args.systemctl)}), flush=True)
+
+
+    if __name__ == '__main__':
+        main()
+  '';
+
+  aiServiceQml = pkgs.writeText "AiService.qml" ''
+    import QtQuick
+    import Quickshell
+    import Quickshell.Io
+
+    Scope {
+        id: service
+        property bool active: false
+        property bool requested: false
+        property string pending: ""
+        property string error: ""
+        property var state: ({providers:[],t3:{state:"stopped",origin:"",version:"",managed:false}})
+        readonly property var providers: state.providers
+        // Local intent wins while an action runs, so the button reacts immediately.
+        readonly property string t3State: pending==="start" ? "starting" : pending==="stop" ? "stopping"
+            : pending==="open" && state.t3.state==="running" ? "running" : state.t3.state
+        readonly property bool busy: pending!==""
+        signal browserRequested(string url)
+        function acceptState(line) {
+            try {
+                const next=JSON.parse(line);
+                if(!Array.isArray(next.providers) || !next.t3 || typeof next.t3.state!=="string")return;
+                state=next;
+            } catch(error) { /* Keep the last complete frame. */ }
+        }
+        function acceptAction(line) {
+            try {
+                const next=JSON.parse(line);
+                error=next.error || "";
+                if(next.ok && typeof next.url==="string" && /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?\//.test(next.url+"/"))
+                    browserRequested(next.url);
+            } catch(error) {service.error="Could not read the T3 response";}
+        }
+        function refresh() {if(active && !collector.running)requested=true;}
+        function action(kind) {
+            if(busy || !["start","stop","open"].includes(kind))return;
+            error="";pending=kind;
+            actionProcess.command=["${pkgs.python3}/bin/python3",Quickshell.shellPath("AiBackend.py"),
+                "--systemctl","${pkgs.systemd}/bin/systemctl","--systemd-run","${pkgs.systemd}/bin/systemd-run",
+                "--steam-run","${pkgs.steam-run}/bin/steam-run","--npx","${pkgs.nodejs_24}/bin/npx",
+                "--action",kind];
+            actionProcess.running=true;
+        }
+        function start() {action("start");}
+        function stop() {action("stop");}
+        function openT3() {action("open");}
+        onActiveChanged:{if(active){error="";requested=true;}}
+        Process {
+            id:collector
+            running:service.requested
+            command:["${pkgs.python3}/bin/python3",Quickshell.shellPath("AiBackend.py"),
+                "--systemctl","${pkgs.systemd}/bin/systemctl"]
+            stdout:SplitParser {onRead:data=>service.acceptState(data)}
+            onExited:service.requested=false
+        }
+        Process {
+            id:actionProcess
+            stdout:SplitParser {onRead:data=>service.acceptAction(data)}
+            onExited:(code,status)=>{
+                if(code!==0 && service.error==="")service.error="Could not run the T3 action";
+                service.pending="";service.requested=true;
+            }
+        }
+        // Server state changes quickly; usage limits are cached by the backend.
+        Timer {interval:service.busy?1000:4000;repeat:true;running:service.active;onTriggered:service.refresh()}
+    }
+  '';
+
+  t3SkyButtonQml = pkgs.writeText "T3SkyButton.qml" ''
+    import QtQuick
+    import QtQuick.Controls
+    import Quickshell.Widgets
+
+    // T3 Code Nightly's app icon as a button: an indigo night sky, a few
+    // twinkling stars, banks of violet clouds along the bottom and a heavy "T3".
+    AbstractButton {
+        id: button
+        property string caption: ""
+        property bool busy: false
+        property bool motionEnabled: true
+        property bool animated: true
+        property real wordmarkSize: 64
+        readonly property bool highlighted: hovered || visualFocus
+        property real lift: highlighted ? 1 : 0
+        Behavior on lift {NumberAnimation {duration:button.motionEnabled?260:0;easing.type:Easing.OutCubic}}
+        property real drift: 0
+        NumberAnimation on drift {
+            from:0;to:Math.PI*2;duration:button.busy?2400:12000;loops:Animation.Infinite
+            running:button.animated && button.motionEnabled && button.visible
+        }
+        padding: 0
+        hoverEnabled: true
+        Accessible.name: caption || "T3 Code"
+        HoverHandler {cursorShape: button.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor}
+
+        background: ClippingRectangle {
+            id: sky
+            radius: Math.min(30, Math.min(width, height) / 4)
+            color: "#0a1531"
+            Rectangle {
+                anchors.fill: parent
+                gradient: Gradient {
+                    GradientStop {position:0;color:"#0a1531"}
+                    GradientStop {position:0.55;color:"#141640"}
+                    GradientStop {position:1;color:"#2a1454"}
+                }
+            }
+            // Fixed star field, scaled with the button. Each star twinkles on its own beat.
+            Repeater {
+                model: [[0.18,0.14,2.2,0],[0.34,0.08,1.4,700],[0.62,0.12,1.6,1500],[0.86,0.2,2.4,300],
+                    [0.08,0.34,1.3,1100],[0.74,0.3,1.2,1900],[0.48,0.24,1.1,500],[0.93,0.42,1.5,1300],
+                    [0.27,0.46,1.0,2300],[0.56,0.4,1.3,900]]
+                delegate: Rectangle {
+                    id: star
+                    required property var modelData
+                    x: sky.width*modelData[0]-width/2;y: sky.height*modelData[1]*(1-0.15*button.lift)-height/2
+                    width: modelData[2]*(1+0.35*button.lift);height: width;radius: width/2
+                    color: "white"
+                    property real glow: 1
+                    opacity: (0.45+0.55*glow)*(0.75+0.25*button.lift)
+                    SequentialAnimation on glow {
+                        running: button.animated && button.motionEnabled && button.visible
+                        loops: Animation.Infinite
+                        PauseAnimation {duration: star.modelData[3]}
+                        NumberAnimation {to:0.15;duration:button.busy?380:1400;easing.type:Easing.InOutSine}
+                        NumberAnimation {to:1;duration:button.busy?380:1400;easing.type:Easing.InOutSine}
+                    }
+                }
+            }
+            // Three cloud banks, back to front. Each bank is one silhouette: a row
+            // of overlapping billows merged with a body below, shaded top to bottom
+            // and casting a soft shadow onto the bank behind it.
+            Canvas {
+                id: clouds
+                anchors.fill: parent
+                property real rise: sky.height*0.04*button.lift
+                readonly property var banks: [
+                    // [baseline, billow size, sway, top colour, bottom colour, seed, right-heavy]
+                    [0.70,0.26,0.030,"#6a4cb6","#3a2a7c",3,1],
+                    [0.80,0.22,0.022,"#5d5fc2","#33358a",7,0],
+                    [0.92,0.20,0.026,"#7787d2","#4752a6",11,0]
+                ]
+                function noise(i, seed) {
+                    const v = Math.sin(i*12.9898 + seed*78.233)*43758.5453;
+                    return v - Math.floor(v);
+                }
+                onPaint: {
+                    const ctx = getContext("2d");ctx.reset();
+                    const w = width, h = height, unit = Math.min(w, h*0.85);
+                    for (let b = 0; b < banks.length; ++b) {
+                        const bank = banks[b];
+                        const size = unit*bank[1], step = size*1.15;
+                        const sway = w*bank[2]*Math.sin(button.drift + b*2.1);
+                        const base = h*bank[0] - rise*(1 - b*0.3);
+                        ctx.save();
+                        ctx.shadowColor = "rgba(6,6,30,0.55)";
+                        ctx.shadowBlur = size*0.45;
+                        ctx.shadowOffsetY = -size*0.08;
+                        const fill = ctx.createLinearGradient(0, base - size*1.3, 0, h);
+                        fill.addColorStop(0, bank[3]);fill.addColorStop(1, bank[4]);
+                        ctx.fillStyle = fill;
+                        const billows = [];
+                        for (let i = -1; i*step < w + step; ++i) {
+                            const t = (i*step)/w;
+                            // The back bank piles up to the right like the icon.
+                            const swell = bank[6] ? 0.55 + 0.75*Math.max(0, Math.min(1, t)) : 1;
+                            billows.push({
+                                r: size*(0.75 + 0.5*noise(i, bank[5]))*swell,
+                                x: i*step + sway + size*0.35*(noise(i + 31, bank[5]) - 0.5),
+                                y: base + size*0.3*noise(i + 57, bank[5])
+                            });
+                        }
+                        // Trace the top of the merged billows as one outline.
+                        ctx.beginPath();ctx.moveTo(0, h);
+                        for (let x = 0; x <= w + 1; x += 1.5) {
+                            let top = base;
+                            for (const c of billows) {
+                                const dx = x - c.x;
+                                if (Math.abs(dx) < c.r) top = Math.min(top, c.y - Math.sqrt(c.r*c.r - dx*dx));
+                            }
+                            ctx.lineTo(x, top);
+                        }
+                        ctx.lineTo(w + 1, h);ctx.closePath();
+                        ctx.fill();
+                        ctx.restore();
+                    }
+                }
+                onWidthChanged: requestPaint()
+                onHeightChanged: requestPaint()
+                onRiseChanged: requestPaint()
+                Component.onCompleted: requestPaint()
+                Connections {target:button;function onDriftChanged(){clouds.requestPaint();}}
+            }
+            Rectangle {
+                anchors.fill: parent
+                color: "white";opacity: button.pressed ? 0.12 : 0.05*button.lift
+            }
+            HoverOutline {
+                anchors.fill: parent
+                cornerRadius: sky.radius
+                hovered: button.highlighted
+                active: button.enabled
+                motionEnabled: button.motionEnabled
+            }
+        }
+
+        contentItem: Item {
+            Text {
+                id: wordmark
+                anchors.centerIn: parent
+                anchors.verticalCenterOffset: button.caption ? -button.height*0.06 : 0
+                text: "T3"
+                color: "white"
+                font.family: "Noto Sans"
+                font.weight: Font.Black
+                font.pixelSize: button.wordmarkSize
+                scale: 1+0.06*button.lift
+            }
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.top: wordmark.bottom;anchors.topMargin: -button.wordmarkSize*0.06
+                visible: button.caption !== ""
+                text: button.caption
+                color: "white"
+                font.family: "0xProto Nerd Font Mono"
+                font.pixelSize: 11
+                opacity: button.enabled ? 0.9 : 0.5
+            }
+        }
+    }
+  '';
+
+  aiDetailsQml = pkgs.writeText "AiDetails.qml" ''
+    import QtQuick
+    import QtQuick.Controls
+    import QtQuick.Shapes
+
+    Item {
+        id: details
+        required property var ai
+        property Item glassSource: null
+        property point glassPosition: Qt.point(0,0)
+        property bool active: false
+        property bool motionEnabled: true
+        property real now: Date.now()
+        property real phase: 0
+        readonly property var providers: ai.providers || []
+        readonly property bool hasProviders: providers.length > 0
+        readonly property string t3State: ai.t3State
+        readonly property bool running: t3State === "running" || t3State === "stopping"
+        property real runProgress: running ? 1 : 0
+        Behavior on runProgress {NumberAnimation {duration:details.motionEnabled?360:0;easing.type:Easing.OutCubic}}
+        width: 600;height: 420
+
+        NumberAnimation on phase {
+            from:0;to:Math.PI*2;duration:2600;loops:Animation.Infinite
+            running:details.active && details.motionEnabled
+        }
+
+        function countdown(resetsAt) {
+            if (typeof resetsAt !== "number") return "";
+            const minutes = Math.max(0, Math.round((resetsAt - now) / 60000));
+            if (minutes < 1) return "now";
+            const days = Math.floor(minutes / 1440), hours = Math.floor(minutes / 60) % 24, rest = minutes % 60;
+            return days ? days + "d " + hours + "h" : hours ? hours + "h " + rest + "m" : rest + "m";
+        }
+        function ago(updatedAt) {
+            if (typeof updatedAt !== "number") return "";
+            const minutes = Math.max(0, Math.floor((now - updatedAt) / 60000));
+            return minutes < 10 ? "" : minutes < 60 ? minutes + "m ago"
+                : minutes < 1440 ? Math.floor(minutes / 60) + "h ago" : Math.floor(minutes / 1440) + "d ago";
+        }
+        function shortLabel(label) {
+            return label === "5-hour" ? "5h" : label === "Weekly" ? "week" : label;
+        }
+        function tint(rgb) {
+            const mix = 0.2, base = 21 / 255;
+            return Qt.rgba(base*(1-mix)+rgb[0]/255*mix, base*(1-mix)+rgb[1]/255*mix, base*(1-mix)+rgb[2]/255*mix, 0.75);
+        }
+        readonly property string t3Version: {
+            const match = /nightly\.(\d{4})(\d{2})(\d{2})/.exec(ai.state.t3.version || "");
+            return match ? "Nightly " + match[1] + "-" + match[2] + "-" + match[3] : ai.state.t3.version || "Nightly";
+        }
+
+        Timer {interval:30000;repeat:true;running:details.active;triggeredOnStart:true;onTriggered:details.now=Date.now()}
+        QtObject {
+            id: glassContext
+            property Item source: details.glassSource
+            property Item root: details
+            property point origin: details.glassPosition
+            property real scale: details.scale
+            property int revision: 0
+            property var layout: [origin.x,origin.y,scale,details.width,details.height,details.runProgress,details.providers.length]
+            onLayoutChanged: Qt.callLater(()=>{revision++;})
+        }
+
+        // The providers' own marks, as vector paths.
+        component BrandLogo: Item {
+            id: brand
+            property string kind: "claude"
+            readonly property bool claude: kind === "claude"
+            readonly property rect box: claude ? Qt.rect(0,0,256,257) : Qt.rect(100,100,411,411)
+            Shape {
+                width: brand.box.width;height: brand.box.height
+                preferredRendererType: Shape.CurveRenderer
+                transform: [
+                    Translate {x:-brand.box.x;y:-brand.box.y},
+                    Scale {xScale:brand.width/brand.box.width;yScale:brand.height/brand.box.height}
+                ]
+                ShapePath {
+                    fillColor: brand.claude ? "#d97757" : "white"
+                    strokeColor: "transparent"
+                    fillRule: brand.claude ? ShapePath.WindingFill : ShapePath.OddEvenFill
+                    PathSvg {path: brand.claude ? "m50.228 170.321 50.357-28.257.843-2.463-.843-1.361h-2.462l-8.426-.518-28.775-.778-24.952-1.037-24.175-1.296-6.092-1.297L0 125.796l.583-3.759 5.12-3.434 7.324.648 16.202 1.101 24.304 1.685 17.629 1.037 26.118 2.722h4.148l.583-1.685-1.426-1.037-1.101-1.037-25.147-17.045-27.22-18.017-14.258-10.37-7.713-5.25-3.888-4.925-1.685-10.758 7-7.713 9.397.649 2.398.648 9.527 7.323 20.35 15.75L94.817 91.9l3.889 3.24 1.555-1.102.195-.777-1.75-2.917-14.453-26.118-15.425-26.572-6.87-11.018-1.814-6.61c-.648-2.723-1.102-4.991-1.102-7.778l7.972-10.823L71.42 0 82.05 1.426l4.472 3.888 6.61 15.101 10.694 23.786 16.591 32.34 4.861 9.592 2.592 8.879.973 2.722h1.685v-1.556l1.36-18.211 2.528-22.36 2.463-28.776.843-8.1 4.018-9.722 7.971-5.25 6.222 2.981 5.12 7.324-.713 4.73-3.046 19.768-5.962 30.98-3.889 20.739h2.268l2.593-2.593 10.499-13.934 17.628-22.036 7.778-8.749 9.073-9.657 5.833-4.601h11.018l8.1 12.055-3.628 12.443-11.342 14.388-9.398 12.184-13.48 18.147-8.426 14.518.778 1.166 2.01-.194 30.46-6.481 16.462-2.982 19.637-3.37 8.88 4.148.971 4.213-3.5 8.62-20.998 5.184-24.628 4.926-36.682 8.685-.454.324.519.648 16.526 1.555 7.065.389h17.304l32.21 2.398 8.426 5.574 5.055 6.805-.843 5.184-12.962 6.611-17.498-4.148-40.83-9.721-14-3.5h-1.944v1.167l11.666 11.406 21.387 19.314 26.767 24.887 1.36 6.157-3.434 4.86-3.63-.518-23.526-17.693-9.073-7.972-20.545-17.304h-1.36v1.814l4.73 6.935 25.017 37.59 1.296 11.536-1.814 3.76-6.481 2.268-7.13-1.297-14.647-20.544-15.1-23.138-12.185-20.739-1.49.843-7.194 77.448-3.37 3.953-7.778 2.981-6.48-4.925-3.436-7.972 3.435-15.749 4.148-20.544 3.37-16.333 3.046-20.285 1.815-6.74-.13-.454-1.49.194-15.295 20.999-23.267 31.433-18.406 19.702-4.407 1.75-7.648-3.954.713-7.064 4.277-6.286 25.47-32.405 15.36-20.092 9.917-11.6-.065-1.686h-.583L44.07 198.125l-12.055 1.555-5.185-4.86.648-7.972 2.463-2.593 20.35-13.999-.064.065Z" : "M252.794 108.802C289.191 99.0484 326.265 110.305 351.148 135.135C385.113 126.072 422.85 134.862 449.492 161.505C476.136 188.149 484.925 225.888 475.862 259.85V259.854C500.696 284.735 511.95 321.81 502.198 358.207C492.447 394.602 464.161 421.084 430.215 430.217C421.083 464.162 394.603 492.448 358.206 502.199C321.812 511.951 284.734 500.693 259.852 475.864C225.887 484.927 188.15 476.137 161.507 449.495C134.864 422.851 126.073 385.111 135.136 351.149C110.304 326.266 99.0496 289.192 108.801 252.795C118.552 216.4 146.84 189.918 180.784 180.785C189.917 146.841 216.396 118.553 252.794 108.802ZM374.292 407.145C374.292 411.271 372.092 415.086 368.517 417.148L283.723 466.102C302.487 480.585 327.555 486.459 352.217 479.852C386.997 470.532 410.068 439.312 410.555 405.006V317.717C410.555 315.08 409.125 312.621 406.843 311.303L374.292 292.509V407.145ZM251.868 415.897C248.296 417.959 243.893 417.959 240.317 415.897L155.526 366.942C152.366 390.436 159.811 415.08 177.866 433.136H177.863C203.325 458.594 241.896 462.962 271.85 446.232L347.449 402.586C349.735 401.268 351.148 398.8 351.148 396.163V358.579L251.868 415.897ZM368.602 220.628C366.319 219.309 363.474 219.318 361.191 220.637L328.641 239.431L427.921 296.749C431.496 298.811 433.697 302.627 433.697 306.752V404.661C455.622 395.654 473.244 376.881 479.851 352.218C489.169 317.442 473.668 281.85 444.201 264.274L368.602 220.628ZM177.303 206.34C155.377 215.348 137.756 234.122 131.148 258.783C121.832 293.561 137.331 329.153 166.799 346.727L242.398 390.373C244.68 391.692 247.525 391.684 249.807 390.366L282.357 371.572L183.078 314.253C179.504 312.189 177.303 308.375 177.303 304.251V206.34ZM259.849 279.145V331.858L305.5 358.213L351.15 331.858V279.145L305.5 252.789L259.849 279.145ZM327.276 144.9C308.512 130.418 283.445 124.543 258.782 131.15C224.002 140.471 200.931 171.691 200.445 205.995V293.286C200.445 295.923 201.875 298.381 204.158 299.7L236.707 318.493V203.856C236.707 199.731 238.909 195.916 242.483 193.853L327.276 144.9ZM433.137 177.867C407.675 152.407 369.103 148.038 339.149 164.769L263.55 208.415C261.265 209.734 259.852 212.202 259.852 214.838V252.423L359.132 195.105C362.703 193.041 367.108 193.041 370.682 195.105L455.473 244.06C458.635 220.567 451.189 195.922 433.135 177.867H433.137Z"}
+                }
+            }
+        }
+
+        // One limit window: a frosted tube filled with white liquid for the
+        // share that is left, echoing the active-window meters.
+        component LimitMeter: Item {
+            id: meter
+            property var window: ({})
+            property string provider: ""
+            property int index: 0
+            readonly property bool known: typeof window.remaining === "number"
+            readonly property real share: known ? Math.max(0, Math.min(100, window.remaining)) : 0
+            property real level: share / 100
+            Behavior on level {NumberAnimation {duration:details.motionEnabled?280:0;easing.type:Easing.OutCubic}}
+            objectName: "aiLimit-" + provider + "-" + index
+            Accessible.role: Accessible.ProgressBar
+            Accessible.name: provider + " " + (window.label || "") + " remaining"
+            Accessible.description: known ? Math.round(share) + "% left" : "Unavailable"
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: details.shortLabel(meter.window.label || "")
+                color: "#aaaaaa";font.family: "0xProto Nerd Font Mono";font.pixelSize: 10
+            }
+            FrostedSurface {
+                id: tube
+                anchors.horizontalCenter: parent.horizontalCenter
+                y: 18;width: Math.min(44, parent.width);height: parent.height - 18 - 46
+                radius: 16;glass: glassContext;tint: "#bf222222"
+                Canvas {
+                    id: liquid
+                    anchors.fill: parent
+                    onPaint: {
+                        const ctx=getContext("2d");ctx.reset();
+                        if(!meter.known||meter.level<=0)return;
+                        const baseline=height*(1-meter.level);
+                        const amplitude=Math.min(5,2+meter.level*3,baseline,height-baseline);
+                        ctx.fillStyle=meter.share<15?"#e57373":"white";ctx.beginPath();ctx.moveTo(0,height);
+                        for(let x=0;x<=width;x++)ctx.lineTo(x,baseline+Math.sin(x/width*Math.PI*2-details.phase-meter.index)*amplitude);
+                        ctx.lineTo(width,height);ctx.closePath();ctx.fill();
+                    }
+                    onWidthChanged: requestPaint()
+                    onHeightChanged: requestPaint()
+                    Component.onCompleted: requestPaint()
+                    Connections {target:details;function onPhaseChanged(){liquid.requestPaint();}}
+                    Connections {target:meter;function onLevelChanged(){liquid.requestPaint();}function onKnownChanged(){liquid.requestPaint();}}
+                }
+            }
+            UsageValue {
+                objectName: "aiRemaining-" + meter.provider + "-" + meter.index
+                anchors.horizontalCenter: parent.horizontalCenter
+                y: tube.y + tube.height + 8
+                text: meter.known ? String(Math.round(meter.share)) : "—"
+                unit: meter.known ? "%" : ""
+                fontSize: 15;slots: 3
+                active: details.active;motionEnabled: details.motionEnabled
+            }
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                y: tube.y + tube.height + 30
+                text: details.countdown(meter.window.resetsAt)
+                color: "#777777";font.family: "0xProto Nerd Font Mono";font.pixelSize: 9
+            }
+        }
+
+        // Provider cards: only CLIs that are actually installed appear.
+        Row {
+            objectName: "aiProviders"
+            x: 20;y: 20;width: 340;spacing: 12
+            visible: details.hasProviders
+            Repeater {
+                model: details.providers
+                delegate: FrostedSurface {
+                    id: card
+                    required property var modelData
+                    readonly property bool claude: modelData.id === "claude"
+                    readonly property var accent: claude ? [217,119,87] : [180,180,180]
+                    readonly property string note: modelData.error && modelData.windows.length ? modelData.error
+                        : [modelData.plan, details.ago(modelData.updatedAt)].filter(Boolean).join(" · ")
+                    objectName: "aiProvider-" + modelData.id
+                    width: (340 - 12 * (details.providers.length - 1)) / details.providers.length
+                    height: 380
+                    radius: 22;glass: glassContext
+                    tintGradient: Gradient {
+                        GradientStop {position:0;color:details.tint(card.accent)}
+                        GradientStop {position:0.5;color:"#bf191919"}
+                    }
+                    BrandLogo {x:16;y:16;width:22;height:22;kind:card.modelData.id}
+                    Text {x:46;y:13;text:card.modelData.name;color:"white";font.family:"0xProto Nerd Font Mono";font.pixelSize:13}
+                    Text {
+                        x: 46;y: 31;width: parent.width - x - 14
+                        text: card.note
+                        color: card.modelData.error ? "#c4aaaa" : "#888888"
+                        font.family: "0xProto Nerd Font Mono";font.pixelSize: 9;elide: Text.ElideRight
+                    }
+                    Text {
+                        anchors.centerIn: parent;width: parent.width - 32
+                        visible: card.modelData.windows.length === 0
+                        text: card.modelData.error || "No limits yet"
+                        color: "#aaaaaa";font.family: "0xProto Nerd Font Mono";font.pixelSize: 11
+                        horizontalAlignment: Text.AlignHCenter;wrapMode: Text.Wrap
+                    }
+                    Row {
+                        id: meters
+                        readonly property int count: Math.max(1, card.modelData.windows.length)
+                        x: 16;y: 60;width: card.width - 32;height: card.height - y - 14
+                        spacing: 10
+                        Repeater {
+                            model: card.modelData.windows
+                            delegate: LimitMeter {
+                                required property var modelData
+                                required property int index
+                                width: (meters.width - meters.spacing * (meters.count - 1)) / meters.count
+                                height: meters.height
+                                window: modelData;provider: card.modelData.id;index: index
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // T3 Code: one night-sky Start button, or Open + Stop once the server is up.
+        FrostedSurface {
+            id: t3Card
+            objectName: "t3Card"
+            x: details.hasProviders ? 372 : 20;y: 20
+            width: details.hasProviders ? 208 : 560;height: 380;radius: 24
+            glass: glassContext;tint: "#bf222222"
+            readonly property bool hasError: details.ai.error !== ""
+            T3SkyButton {
+                id: skyButton
+                objectName: details.running ? "openT3" : "startT3"
+                x: 12;y: 12;width: parent.width - 24
+                height: parent.height - 24 - 58 * details.runProgress - (t3Card.hasError ? 22 : 0)
+                wordmarkSize: Math.min(width, height) * 0.36
+                caption: details.t3State === "running" ? "Take me to T3 ↗" : details.t3State === "starting" ? "Starting…"
+                    : details.t3State === "stopping" ? "Stopping…" : "Start"
+                busy: details.ai.busy
+                enabled: !details.ai.busy
+                animated: details.active
+                motionEnabled: details.motionEnabled
+                onClicked: details.running ? details.ai.openT3() : details.ai.start()
+            }
+            MediaButton {
+                objectName: "stopT3"
+                x: 12;y: skyButton.y + skyButton.height + 12;width: parent.width - 24;height: 46
+                opacity: details.runProgress;visible: opacity > 0
+                enabled: details.t3State === "running" && !details.ai.busy
+                glass: glassContext;motionEnabled: details.motionEnabled
+                label: "Stop T3 server";glyph: "";iconSize: 18;selected: true
+                onClicked: details.ai.stop()
+            }
+            Text {
+                x: 16;y: parent.height - height - 14;width: parent.width - 32
+                visible: t3Card.hasError
+                text: details.ai.error
+                color: "#c4aaaa"
+                font.family: "0xProto Nerd Font Mono";font.pixelSize: 9
+                horizontalAlignment: Text.AlignHCenter;elide: Text.ElideRight
             }
         }
     }
@@ -5056,6 +6196,12 @@ let
             active: expandedState.mounted && expandedState.selected === "network"
             onCommandRequested: command => {root.closeMenu();Quickshell.execDetached(command);}
             onCopyRequested: value => Quickshell.execDetached(["${pkgs.wl-clipboard}/bin/wl-copy", "--", value])
+        }
+
+        AiService {
+            id: aiService
+            active: expandedState.mounted && expandedState.selected === "ai"
+            onBrowserRequested: url => {root.closeMenu();Quickshell.execDetached(["${chromium}/bin/chromium", url]);}
         }
 
         WeatherService {
@@ -5428,6 +6574,10 @@ let
                             enabled: visible && moduleDeck.interactive
                             now: clock.date
                             weather: weatherService
+                            glassSource: clockTile.glassSource
+                            glassPosition: clockTile.glassPosition
+                            active: visible
+                            motionEnabled: root.motionEnabled
                         }
 
                     }
@@ -5438,7 +6588,8 @@ let
                             {key: "media", label: "Media", icon: ""},
                             {key: "usage", label: "Usage", icon: ""},
                             {key: "network", label: "Network", icon: "󰛳"},
-                            {key: "apps", label: "Apps", icon: ""}
+                            {key: "apps", label: "Apps", icon: ""},
+                            {key: "ai", label: "AI", icon: "󰚩"}
                         ]
                         delegate: ModuleTile {
                             id: dummy
@@ -5472,7 +6623,7 @@ let
                             glassPosition: morphProgress > 0 ? Qt.point(modulePanel.x, modulePanel.y) : Qt.point(modules.x + x, modules.y)
                             glassOpacity: expandedState.progress
                             accessibleLabel: modelData.key === "media" ? audioService.description : "Open " + modelData.label
-                            outlineEnabled: modelData.key === "network" || modelData.key === "apps"
+                            outlineEnabled: modelData.key === "network" || modelData.key === "apps" || modelData.key === "ai"
                             clip: modelData.key !== "media" || morphProgress > 0
                             compactWidth: modelData.key === "media" ? 58 : Math.ceil(label.implicitWidth) + 20
                             motionEnabled: root.motionEnabled
@@ -5559,6 +6710,21 @@ let
                                 active: expandedState.open && visible
                                 window: windowService
                                 trayItems: dummy.modelData.key === "apps" ? SystemTray.items : []
+                                motionEnabled: root.motionEnabled
+                            }
+
+                            AiDetails {
+                                objectName: "aiDetails"
+                                width: 600; height: 420
+                                scale: clockWindow.detailsScale
+                                transformOrigin: Item.TopLeft
+                                glassSource: dummy.glassSource
+                                glassPosition: dummy.glassPosition
+                                opacity: moduleDeck.contentProgress
+                                visible: dummy.modelData.key === "ai" && dummy.morphProgress > 0 && opacity > 0
+                                enabled: visible && moduleDeck.interactive
+                                active: expandedState.open && visible
+                                ai: aiService
                                 motionEnabled: root.motionEnabled
                             }
 
@@ -5706,6 +6872,10 @@ in {
   xdg.configFile."quickshell/AppWindowButton.qml".source = appWindowButtonQml;
   xdg.configFile."quickshell/AppTrayButton.qml".source = appTrayButtonQml;
   xdg.configFile."quickshell/AppsDetails.qml".source = appsDetailsQml;
+  xdg.configFile."quickshell/AiBackend.py".source = aiBackendPython;
+  xdg.configFile."quickshell/AiService.qml".source = aiServiceQml;
+  xdg.configFile."quickshell/T3SkyButton.qml".source = t3SkyButtonQml;
+  xdg.configFile."quickshell/AiDetails.qml".source = aiDetailsQml;
   xdg.configFile."quickshell/shell.qml".source = shellQml;
   xdg.configFile."quickshell/ClockVisibility.qml".source = visibilityQml;
   xdg.configFile."quickshell/RollingClock.qml".source = rollingClockQml;
@@ -5715,13 +6885,15 @@ in {
   # Compositor fades include the glass blur. Unmapping leaves no hidden surface
   # or residual frosted patch; disabling compositor animations is respected.
   wayland.windowManager.hyprland.settings.bind = [
-    ", Super_L, exec, ${pkgs.quickshell}/bin/qs ipc call shell toggle"
-    ", Super_R, exec, ${pkgs.quickshell}/bin/qs ipc call shell toggle"
+    { _args = [ "Super_L" (lib.generators.mkLuaInline ''hl.dsp.exec_cmd("${pkgs.quickshell}/bin/qs ipc call shell toggle")'') ]; }
+    { _args = [ "Super_R" (lib.generators.mkLuaInline ''hl.dsp.exec_cmd("${pkgs.quickshell}/bin/qs ipc call shell toggle")'') ]; }
   ];
 
-  wayland.windowManager.hyprland.settings.layerrule = [
-    "animation fade, match:namespace ^(quickshell-clock)$"
-  ];
+  wayland.windowManager.hyprland.settings.layer_rule = {
+    name = "quickshell-clock-fade";
+    match.namespace = "^(quickshell-clock)$";
+    animation = "fade";
+  };
 
   systemd.user.services.quickshell = {
     Unit = {
