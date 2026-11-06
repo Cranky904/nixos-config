@@ -5702,6 +5702,7 @@ let
   t3SkyButtonQml = pkgs.writeText "T3SkyButton.qml" ''
     import QtQuick
     import QtQuick.Controls
+    import QtQuick.Effects
     import Quickshell.Widgets
 
     // T3 Code Nightly's app icon as a button: an indigo night sky, a few
@@ -5762,50 +5763,69 @@ let
             }
             // Three cloud banks, back to front. Each bank is one silhouette: a row
             // of overlapping billows merged with a body below, shaded top to bottom
-            // and casting a soft shadow onto the bank behind it.
-            Canvas {
+            // and casting a soft shadow onto the bank behind it. Each bank is
+            // rasterised once (software Canvas + shadow blur is expensive) and the
+            // sway/rise motion only translates it on the GPU.
+            Repeater {
                 id: clouds
-                anchors.fill: parent
-                property real rise: sky.height*0.04*button.lift
-                readonly property var banks: [
+                model: [
                     // [baseline, billow size, sway, top colour, bottom colour, seed, right-heavy]
                     [0.70,0.26,0.030,"#6a4cb6","#3a2a7c",3,1],
                     [0.80,0.22,0.022,"#5d5fc2","#33358a",7,0],
                     [0.92,0.20,0.026,"#7787d2","#4752a6",11,0]
                 ]
-                function noise(i, seed) {
-                    const v = Math.sin(i*12.9898 + seed*78.233)*43758.5453;
-                    return v - Math.floor(v);
-                }
-                onPaint: {
-                    const ctx = getContext("2d");ctx.reset();
-                    const w = width, h = height, unit = Math.min(w, h*0.85);
-                    for (let b = 0; b < banks.length; ++b) {
-                        const bank = banks[b];
-                        const size = unit*bank[1], step = size*1.15;
-                        const sway = w*bank[2]*Math.sin(button.drift + b*2.1);
-                        const base = h*bank[0] - rise*(1 - b*0.3);
+                delegate: Canvas {
+                    id: bank
+                    required property var modelData
+                    required property int index
+                    readonly property real margin: Math.ceil(sky.width*modelData[2]) + 2
+                    readonly property real rise: sky.height*0.04*button.lift*(1 - index*0.3)
+                    x: -margin + sky.width*modelData[2]*Math.sin(button.drift + index*2.1)
+                    y: -rise
+                    width: sky.width + 2*margin
+                    height: sky.height + Math.ceil(sky.height*0.04) + 2
+                    readonly property real billowSize: Math.min(sky.width, sky.height*0.85)*modelData[1]
+                    // The soft shadow onto the bank behind is a GPU effect. Canvas's own
+                    // shadowBlur is a CPU convolution that froze the shell for seconds.
+                    layer.enabled: billowSize > 0
+                    layer.effect: MultiEffect {
+                        shadowEnabled: true
+                        shadowColor: "#06061e"
+                        shadowOpacity: 0.55
+                        blurMax: Math.max(1, Math.round(bank.billowSize*0.45))
+                        shadowBlur: 1
+                        shadowHorizontalOffset: 0
+                        shadowVerticalOffset: -bank.billowSize*0.08
+                    }
+                    function noise(i, seed) {
+                        const v = Math.sin(i*12.9898 + seed*78.233)*43758.5453;
+                        return v - Math.floor(v);
+                    }
+                    onPaint: {
+                        const ctx = getContext("2d");ctx.reset();
+                        const w = sky.width, h = sky.height, m = margin, unit = Math.min(w, h*0.85);
+                        const size = unit*modelData[1], step = size*1.15;
+                        // Not laid out yet: a zero step would never leave the billow loop.
+                        if (!(step > 0) || !(width > 0)) return;
+                        const base = h*modelData[0];
                         ctx.save();
-                        ctx.shadowColor = "rgba(6,6,30,0.55)";
-                        ctx.shadowBlur = size*0.45;
-                        ctx.shadowOffsetY = -size*0.08;
                         const fill = ctx.createLinearGradient(0, base - size*1.3, 0, h);
-                        fill.addColorStop(0, bank[3]);fill.addColorStop(1, bank[4]);
+                        fill.addColorStop(0, modelData[3]);fill.addColorStop(1, modelData[4]);
                         ctx.fillStyle = fill;
                         const billows = [];
-                        for (let i = -1; i*step < w + step; ++i) {
+                        for (let i = -2; i*step < w + m + step; ++i) {
                             const t = (i*step)/w;
                             // The back bank piles up to the right like the icon.
-                            const swell = bank[6] ? 0.55 + 0.75*Math.max(0, Math.min(1, t)) : 1;
+                            const swell = modelData[6] ? 0.55 + 0.75*Math.max(0, Math.min(1, t)) : 1;
                             billows.push({
-                                r: size*(0.75 + 0.5*noise(i, bank[5]))*swell,
-                                x: i*step + sway + size*0.35*(noise(i + 31, bank[5]) - 0.5),
-                                y: base + size*0.3*noise(i + 57, bank[5])
+                                r: size*(0.75 + 0.5*noise(i, modelData[5]))*swell,
+                                x: m + i*step + size*0.35*(noise(i + 31, modelData[5]) - 0.5),
+                                y: base + size*0.3*noise(i + 57, modelData[5])
                             });
                         }
                         // Trace the top of the merged billows as one outline.
-                        ctx.beginPath();ctx.moveTo(0, h);
-                        for (let x = 0; x <= w + 1; x += 1.5) {
+                        ctx.beginPath();ctx.moveTo(0, height);
+                        for (let x = 0; x <= width + 1; x += 1.5) {
                             let top = base;
                             for (const c of billows) {
                                 const dx = x - c.x;
@@ -5813,16 +5833,14 @@ let
                             }
                             ctx.lineTo(x, top);
                         }
-                        ctx.lineTo(w + 1, h);ctx.closePath();
+                        ctx.lineTo(width + 1, height);ctx.closePath();
                         ctx.fill();
                         ctx.restore();
                     }
+                    onWidthChanged: requestPaint()
+                    onHeightChanged: requestPaint()
+                    Component.onCompleted: requestPaint()
                 }
-                onWidthChanged: requestPaint()
-                onHeightChanged: requestPaint()
-                onRiseChanged: requestPaint()
-                Component.onCompleted: requestPaint()
-                Connections {target:button;function onDriftChanged(){clouds.requestPaint();}}
             }
             Rectangle {
                 anchors.fill: parent
@@ -5974,23 +5992,26 @@ let
                 anchors.horizontalCenter: parent.horizontalCenter
                 y: 18;width: Math.min(44, parent.width);height: parent.height - 18 - 46
                 radius: 16;glass: glassContext;tint: "#bf222222"
+                // Two wave periods painted once; the phase only slides them sideways,
+                // so the animation never re-rasterises the canvas.
                 Canvas {
                     id: liquid
-                    anchors.fill: parent
+                    readonly property real span: tube.width
+                    x: -span*(1 - details.phase/(Math.PI*2))
+                    y: 0;width: span*2;height: tube.height
                     onPaint: {
                         const ctx=getContext("2d");ctx.reset();
-                        if(!meter.known||meter.level<=0)return;
+                        if(!meter.known||meter.level<=0||span<=0)return;
                         const baseline=height*(1-meter.level);
                         const amplitude=Math.min(5,2+meter.level*3,baseline,height-baseline);
                         ctx.fillStyle=meter.share<15?"#e57373":"white";ctx.beginPath();ctx.moveTo(0,height);
-                        for(let x=0;x<=width;x++)ctx.lineTo(x,baseline+Math.sin(x/width*Math.PI*2-details.phase-meter.index)*amplitude);
+                        for(let x=0;x<=width;x++)ctx.lineTo(x,baseline+Math.sin(x/span*Math.PI*2-meter.index)*amplitude);
                         ctx.lineTo(width,height);ctx.closePath();ctx.fill();
                     }
                     onWidthChanged: requestPaint()
                     onHeightChanged: requestPaint()
                     Component.onCompleted: requestPaint()
-                    Connections {target:details;function onPhaseChanged(){liquid.requestPaint();}}
-                    Connections {target:meter;function onLevelChanged(){liquid.requestPaint();}function onKnownChanged(){liquid.requestPaint();}}
+                    Connections {target:meter;function onLevelChanged(){liquid.requestPaint();}function onKnownChanged(){liquid.requestPaint();}function onShareChanged(){liquid.requestPaint();}}
                 }
             }
             UsageValue {
